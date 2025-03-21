@@ -1,69 +1,52 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
-from next_training import get_next_training
-from data import load_user_data, save_user_data
+from trainings import get_next_training
+from data import *
 from games import *
-
-# Conversation states
-NAME = 0
-TEAM = 1
-GAME_DATE = 10
-GAME_TIME = 11
-GAME_LOCATION = 12
-GAME_OPPONENT = 13
-GAME_ARRIVAL = 14
-GAME_TEAM=15
-GAME_DELETE_CONFIRM = 20
-EDIT_GAME_SELECT = 30
-EDIT_GAME_FIELD = 31
-EDIT_GAME_NEW_VALUE = 32
-json_file = "user_data.json"
+from config import *
 
 
+# Загалом оптимізована, але можна текст змінити
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.message.from_user
     user_id = user.id
 
     # Load existing user data
-    user_data = load_user_data(json_file)
+    user_data = load_data(JSON_FILE)
 
     # Check if user is already registered
     if str(user_id) in user_data and "name" in user_data[str(user_id)] and "team" in user_data[str(user_id)]:
         await update.message.reply_text(
-            f"Вітаю, {user_data[str(user_id)]['name']}! Ти вже зареєстрований.\n"
-            f"Твоя команда: {user_data[str(user_id)]['team']}\n"
-            f"Використовуй команди /next_training для інформації про тренування "
-            f"та /next_game для інформації про ігри."
-        )
+            f"Використовуй команди /next_training /next_game та /list_games щоб дізнатися інфу про наступне тренування та наступну гру."
+        )  # Не знаю як краще написати
         return ConversationHandler.END
 
     # Store basic user info
     else:
         user_data[str(user_id)] = {
-            "telegram_username": user.username or "No username"
+            "telegram_username": user.username
         }
-        save_user_data(user_data, json_file)
+        save_data(user_data, JSON_FILE)
 
     # Ask for the user's name
     await update.message.reply_text(
         "Привіт! Введи своє прізвище та ім'я АНГЛІЙСЬКОЮ"
-    )
+    )  # Залежить від того як ми будемо зберігати
 
     return NAME
 
 
-# Handle the user's name input and ask for team selection
+# Поки не зрозуміло як краще зберігати дебт, а інше нормально
 async def name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user = update.message.from_user
-    user_id = str(user.id)
+    user_id = str(update.message.from_user.id)
     user_input_name = update.message.text
 
     # Load existing user data
-    user_data = load_user_data(json_file)
+    user_data = load_data(JSON_FILE)
     user_data[user_id]["name"] = user_input_name
     user_data[user_id]["debt"] = [
         0]  # Треба подумати як краще оце зберігати( або масив масивів або дікт діктів) але загалом можна просто в масив і чілити
-    save_user_data(user_data, json_file)
+    save_data(user_data, JSON_FILE)
 
     # Create keyboard for team selection
     keyboard = [
@@ -82,29 +65,27 @@ async def name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return TEAM
 
 
-# Handle team selection
+# Просто змінити текст після завершення реєстрації
 async def team(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
-
     user_id = str(query.from_user.id)
     team_choice = "Male" if query.data == "team_male" else "Female"
 
     # Load existing user data
-    user_data = load_user_data(json_file)
+    user_data = load_data(JSON_FILE)
     user_data[user_id]["team"] = team_choice
-    save_user_data(user_data, json_file)
+    save_data(user_data, JSON_FILE)
 
     await query.edit_message_text(
-        f"Реєстреацію завершено"
+        f"Реєстреацію завершено.\n"
         f"Використовуй команди /next_training для інформації про тренування "
-        f"та /next_game для інформації про ігри."  # Потім треба було б додати щоб знати що є
+        f"та /next_game для інформації про ігри."
     )
 
     return ConversationHandler.END
 
 
-# Cancel function to end conversation
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
         "Реєстрація скасована. Використовуй /start щоб спробувати знову."
@@ -116,60 +97,24 @@ async def error(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     print(f"Update {update} caused error {context.error}")
 
 
-# command to get info about next training
 async def next_training(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(get_next_training())
 
 
-# command to get info about next game
 async def next_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = str(update.message.from_user.id)
-
-    # Load user data to check team
-    user_data = load_user_data(json_file)
+    user_data = load_data(JSON_FILE)
 
     # If user is registered, show games for their team
     if user_id in user_data and "team" in user_data[user_id]:
-        team = user_data[user_id]["team"]
-        await update.message.reply_text(get_next_game(team))
+        await update.message.reply_text(get_next_game(user_data[user_id]["team"]))
     else:
-        # Let user select which team's games to view
-        keyboard = [
-            [
-                InlineKeyboardButton("Чоловіча команда", callback_data="view_male"),
-                InlineKeyboardButton("Жіноча команда", callback_data="view_female"),
-            ],
-            [
-                InlineKeyboardButton("Всі ігри", callback_data="view_all"),
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        await update.message.reply_text(
-            "Виберіть команду, щоб переглянути інформацію про наступну гру:",
-            reply_markup=reply_markup
-        )
-
-
-async def game_team_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    await query.answer()
-
-    data = query.data
-
-    if data == "view_male":
-        await query.edit_message_text(get_next_game("Male"))
-    elif data == "view_female":
-        await query.edit_message_text(get_next_game("Female"))
-    else:  # view_all
-        await query.edit_message_text(get_next_game())
+        print("Заверши реєстрацію, щоб побачити інформацію про наступну гру")
 
 
 async def add_game_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = update.message.from_user.id
-
     # Check if user is authorized
-    if not is_authorized(user_id):
+    if not is_authorized(update.message.from_user.id):
         await update.message.reply_text("У вас немає дозволу на додавання інформації про ігри.")
         return ConversationHandler.END
 
@@ -181,6 +126,7 @@ async def add_game_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     return GAME_DATE
 
 
+# Треба додати перевірку на правильність введених данних
 async def game_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['game_date'] = update.message.text
 
@@ -191,6 +137,7 @@ async def game_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return GAME_TIME
 
 
+# Треба додати перевірку на правильність введених данних
 async def game_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['game_time'] = update.message.text
 
@@ -214,17 +161,6 @@ async def game_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 async def game_opponent(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['game_opponent'] = update.message.text
 
-    await update.message.reply_text(
-        "Введіть час, коли гравці повинні прибути на місце (наприклад, 18:30)"
-    )
-
-    return GAME_ARRIVAL
-
-
-async def game_arrival(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data['game_arrival'] = update.message.text
-
-    # Create keyboard for team selection
     keyboard = [
         [
             InlineKeyboardButton("Чоловіча команда", callback_data="add_male"),
@@ -247,7 +183,6 @@ async def game_team(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     team_choice = "Male" if query.data == "add_male" else "Female"
     context.user_data['game_team'] = team_choice
-    user_id = query.from_user.id
 
     # Save the game data
     add_game(
@@ -255,7 +190,6 @@ async def game_team(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         time=context.user_data['game_time'],
         location=context.user_data['game_location'],
         opponent=context.user_data['game_opponent'],
-        arrival_time=context.user_data['game_arrival'],
         team=team_choice
     )
 
@@ -267,21 +201,8 @@ async def game_team(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return ConversationHandler.END
 
 
-async def check_debt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_data = load_user_data(json_file)
-    await update.message.reply_text(f"Твій борг: {str(user_data[str(update.message.from_user.id)]["debt"][0])} гривень")
-
-
+# Не знаю чи достатньо цього функціоналу чи ще щось треба
 async def list_games(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_id = update.message.from_user.id
-
-    # Check if user is authorized to manage games
-    is_admin = is_authorized(user_id)
-
-    # Load user data to check team
-    user_data = load_user_data(json_file)
-    user_id_str = str(user_id)
-
     # Create team selection keyboard
     keyboard = [
         [
@@ -292,21 +213,7 @@ async def list_games(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             InlineKeyboardButton("Всі ігри", callback_data="list_all"),
         ]
     ]
-
-    # Add past games option for admins
-    if is_admin:
-        keyboard.append([
-            InlineKeyboardButton("Включаючи минулі ігри", callback_data="list_past"),
-        ])
-
     reply_markup = InlineKeyboardMarkup(keyboard)
-
-    # Default to user's team if registered
-    default_team = None
-    if user_id_str in user_data and "team" in user_data[user_id_str]:
-        default_team = user_data[user_id_str]["team"]
-
-    context.user_data['list_admin'] = is_admin
 
     await update.message.reply_text(
         "Виберіть команду для перегляду ігор:",
@@ -314,15 +221,11 @@ async def list_games(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     )
 
 
+# Наче норм але думаю можна трошки змінити
 async def list_games_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-
     data = query.data
-    is_admin = context.user_data.get('list_admin', False)
-
-    # Get games based on selection
-    include_past = data == "list_past"
     games = list_all_games()
 
     # Filter by team if needed
@@ -346,19 +249,13 @@ async def list_games_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
                     f"   Місце: {game['location']}\n"
                     f"   ID гри: {game['id']}\n\n")
 
-    if is_admin:
-        message += "📝 Керування іграми:\n"
-        message += "• Щоб видалити гру: /delete_game ID_гри\n"
-        message += "• Щоб редагувати гру: /edit_game ID_гри\n"
-
     await query.edit_message_text(message)
 
 
+# Теж наче норм
 async def delete_game_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_id = update.message.from_user.id
-
     # Check if user is authorized
-    if not is_authorized(user_id):
+    if not is_authorized(update.message.from_user.id):
         await update.message.reply_text("У вас немає дозволу на видалення ігор.")
         return
 
@@ -369,7 +266,6 @@ async def delete_game_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             "Щоб побачити ID ігор, використайте /list_games"
         )
         return
-
     game_id = context.args[0]
 
     # Create confirmation keyboard
@@ -414,10 +310,7 @@ async def delete_game_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def edit_game_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = update.message.from_user.id
-
-    # Check if user is authorized
-    if not is_authorized(user_id):
+    if not is_authorized(update.message.from_user.id):
         await update.message.reply_text("У вас немає дозволу на редагування ігор.")
         return ConversationHandler.END
 
@@ -541,3 +434,9 @@ async def edit_game_value(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await query.edit_message_text(f"Не вдалося оновити гру з ID {game_id}.")
 
     return ConversationHandler.END
+
+
+# Потім змінити або додати щось в разі потреби
+async def check_debt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_data = load_data(JSON_FILE)
+    await update.message.reply_text(f"Твій борг: {str(user_data[str(update.message.from_user.id)]["debt"][0])} гривень")

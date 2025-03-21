@@ -1,6 +1,4 @@
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes, ConversationHandler, MessageHandler, Updater, \
-    filters, CallbackQueryHandler
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler
 from commands import *
 
 telegram_api_token = "8010698609:AAGZhl3Cfqh_YRaV1u9ROm0xySNUgLIzIC0"
@@ -23,7 +21,6 @@ if __name__ == "__main__":
             GAME_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, game_time)],
             GAME_LOCATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, game_location)],
             GAME_OPPONENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, game_opponent)],
-            GAME_ARRIVAL: [MessageHandler(filters.TEXT & ~filters.COMMAND, game_arrival)],
             GAME_TEAM: [CallbackQueryHandler(game_team, pattern=r"^add_")]
         },
         fallbacks=[CommandHandler('cancel', cancel)]
@@ -52,7 +49,6 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("list_games", list_games))
     app.add_handler(CommandHandler("delete_game", delete_game_command))
     app.add_handler(CallbackQueryHandler(delete_game_callback, pattern=r"^delete_"))
-    app.add_handler(CallbackQueryHandler(game_team_selection, pattern=r"^view_"))
     app.add_handler(CallbackQueryHandler(list_games_callback, pattern=r"^list_"))
 
     app.add_error_handler(error)

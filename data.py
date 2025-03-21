@@ -1,14 +1,14 @@
 import json
 
 
-def load_user_data(file):
+def load_data(file, *args):
     try:
         with open(file, 'r') as f:
             return json.load(f)
     except FileNotFoundError:
-        return {}
+        return args if args else {}
 
 
-def save_user_data(user_data, file):
+def save_data(data, file):
     with open(file, 'w') as f:
-        json.dump(user_data, f, indent=4)
+        json.dump(data, f, indent=4)
