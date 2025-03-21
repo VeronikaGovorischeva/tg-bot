@@ -1,20 +1,12 @@
 import datetime
 from datetime import timedelta
 import pytz
+from config import TRAINING_SCHEDULE
 
 
 def get_next_training():
-    # Розклад тренувань (день тижня, години, хвилини)
-    # день тижня: 0 - понеділок, 4 - п'ятниця, 5 - субота
-    schedule = [
-        (0, 19, 30, 21, 00),  # Понеділок 19:30-21:00
-        (4, 18, 00, 19, 30),  # П'ятниця 18:00-19:30
-        (5, 17, 00, 19, 00)  # Субота 17:00-19:00
-    ]  # Якщо з'являється якесь інше тренування, просто додати тут цю інфу і все
-
     # Отримуємо поточний час в Україні (Київ)
-    kyiv_tz = pytz.timezone('Europe/Kiev')
-    now = datetime.datetime.now(kyiv_tz)
+    now = datetime.datetime.now(pytz.timezone('Europe/Kiev'))
 
     # Визначаємо поточний день тижня (0 - понеділок, 6 - неділя)
     current_weekday = now.weekday()
@@ -23,7 +15,7 @@ def get_next_training():
     next_training = None
     days_until_next = 7  # Максимальна кількість днів до наступного тренування
 
-    for training in schedule:
+    for training in TRAINING_SCHEDULE:
         weekday, start_hour, start_min, end_hour, end_min = training
 
         # Розрахуємо різницю в днях до цього тренування
