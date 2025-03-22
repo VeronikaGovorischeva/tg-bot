@@ -6,7 +6,7 @@ def load_data(file, *args):
         with open(file, 'r') as f:
             return json.load(f)
     except FileNotFoundError:
-        return args if args else {}
+        return args[0] if args else {}
 
 
 def save_data(data, file):

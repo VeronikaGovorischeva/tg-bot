@@ -1,59 +1,463 @@
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ContextTypes, ConversationHandler
 import datetime
-from datetime import timedelta
-import pytz
 from config import TRAINING_SCHEDULE
+import json
+import pytz
+from data import load_data, save_data
+from validation import is_authorized
+
+TYPE, TEAM, COACH, DATE, START, END, WEEKDAY = range(
+    7)
+
+# Path for storing one-time trainings
+ONE_TIME_TRAININGS_FILE = "one_time_trainings.json"
+CONSTANT_TRAININGS_FILE = "constant_trainings.json"
 
 
-def get_next_training():
-    # Отримуємо поточний час в Україні (Київ)
-    now = datetime.datetime.now(pytz.timezone('Europe/Kiev'))
+async def add_training(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if not is_authorized(update.message.from_user.id):
+        await update.message.reply_text("У вас немає дозволу на додавання тренувань.")
+        return ConversationHandler.END
 
-    # Визначаємо поточний день тижня (0 - понеділок, 6 - неділя)
-    current_weekday = now.weekday()
+    keyboard = [
+        [
+            InlineKeyboardButton("Одноразове", callback_data="training_onetime"),
+            InlineKeyboardButton("Постійне", callback_data="training_recurring"),
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
 
-    # Знаходимо найближче тренування
-    next_training = None
-    days_until_next = 7  # Максимальна кількість днів до наступного тренування
+    await update.message.reply_text(
+        "Виберіть тип тренування:",
+        reply_markup=reply_markup
+    )
 
-    for training in TRAINING_SCHEDULE:
-        weekday, start_hour, start_min, end_hour, end_min = training
+    return TYPE
 
-        # Розрахуємо різницю в днях до цього тренування
-        days_diff = (weekday - current_weekday) % 7
 
-        # Створюємо datetime для цього тренування
-        training_date = now.replace(hour=start_hour, minute=start_min, second=0, microsecond=0)
-        if days_diff == 0:  # Якщо тренування сьогодні
-            if now.time() < training_date.time():  # Якщо тренування ще не почалося
-                if days_diff < days_until_next:
-                    next_training = (days_diff, weekday, start_hour, start_min, end_hour, end_min)
-                    days_until_next = days_diff
-        else:  # Якщо тренування в інший день
-            if days_diff < days_until_next:
-                next_training = (days_diff, weekday, start_hour, start_min, end_hour, end_min)
-                days_until_next = days_diff
+async def training_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
 
-    # Формуємо повідомлення
-    if next_training:
-        days_diff, weekday, start_hour, start_min, end_hour, end_min = next_training
+    training_type = query.data
+    context.user_data['training_type'] = training_type
 
-        # Визначаємо назву дня тижня
-        weekday_names = ['понеділок', 'вівторок', 'середу', 'четвер', "п'ятницю", 'суботу', 'неділю']
-        weekday_name = weekday_names[weekday]
+    keyboard = [
+        [
+            InlineKeyboardButton("Чоловіча", callback_data="training_team_male"),
+            InlineKeyboardButton("Жіноча", callback_data="training_team_female"),
+        ],
+        [
+            InlineKeyboardButton("Обидві команди", callback_data="training_team_both"),
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # Дата наступного тренування
-        next_date = now + timedelta(days=days_diff)
-        date_str = next_date.strftime("%d.%m.%Y")
+    await query.edit_message_text(
+        "Для якої команди це тренування?",
+        reply_markup=reply_markup
+    )
 
-        if days_diff == 0:
-            day_text = "сьогодні"
-        elif days_diff == 1:
-            day_text = "завтра"
-        else:
-            day_text = f"через {days_diff} дні(в)"
+    return TEAM
 
-        message = (f"Наступне тренування {day_text} ({weekday_name}), {date_str} "
-                   f"з {start_hour:02d}:{start_min:02d} до {end_hour:02d}:{end_min:02d}")
+
+async def training_team(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    team_data = query.data.replace("training_team_", "")
+    if team_data == "male":
+        team = "Male"
+    elif team_data == "female":
+        team = "Female"
     else:
-        message = "Не вдалося визначити наступне тренування."
-    return message
+        team = "Both"
+
+    context.user_data['training_team'] = team
+
+    keyboard = [
+        [
+            InlineKeyboardButton("Так", callback_data="training_coach_yes"),
+            InlineKeyboardButton("Ні", callback_data="training_coach_no"),
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(
+        "Це тренування з тренером?",
+        reply_markup=reply_markup
+    )
+
+    return COACH
+
+
+async def training_coach(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    with_coach = query.data == "training_coach_yes"
+    context.user_data['with_coach'] = with_coach
+
+    if context.user_data['training_type'] == "training_onetime":
+        await query.edit_message_text(
+            "Введіть дату тренування у форматі ДД.ММ.РРРР (наприклад, 25.03.2025)"
+        )
+        return DATE
+    else:
+        keyboard = [
+            [InlineKeyboardButton("Понеділок", callback_data="weekday_0")],
+            [InlineKeyboardButton("Вівторок", callback_data="weekday_1")],
+            [InlineKeyboardButton("Середа", callback_data="weekday_2")],
+            [InlineKeyboardButton("Четвер", callback_data="weekday_3")],
+            [InlineKeyboardButton("П'ятниця", callback_data="weekday_4")],
+            [InlineKeyboardButton("Субота", callback_data="weekday_5")],
+            [InlineKeyboardButton("Неділя", callback_data="weekday_6")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(
+            "Виберіть день тижня для регулярного тренування:",
+            reply_markup=reply_markup
+        )
+        return WEEKDAY
+
+
+async def training_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    try:
+        date_text = update.message.text
+        date_obj = datetime.datetime.strptime(date_text, "%d.%m.%Y").date()
+
+        context.user_data['training_date'] = date_text
+
+        await update.message.reply_text(
+            "Введіть час початку тренування у форматі ГГ:ХХ (наприклад, 19:00)"
+        )
+        return START
+    except ValueError:
+        await update.message.reply_text(
+            "Неправильний формат дати. Будь ласка, використовуйте формат ДД.ММ.РРРР (наприклад, 25.03.2025)"
+        )
+        return DATE
+
+
+async def training_weekday(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    weekday = int(query.data.replace("weekday_", ""))
+    context.user_data['training_weekday'] = weekday
+
+    await query.edit_message_text(
+        "Введіть час початку тренування у форматі ГГ:ХХ (наприклад, 19:00)"
+    )
+    return START
+
+
+async def training_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    try:
+        time_text = update.message.text
+        time_obj = datetime.datetime.strptime(time_text, "%H:%M").time()
+
+        context.user_data['start_hour'] = time_obj.hour
+        context.user_data['start_min'] = time_obj.minute
+
+        await update.message.reply_text(
+            "Введіть час закінчення тренування у форматі ГГ:ХХ (наприклад, 21:00)"
+        )
+        return END
+    except ValueError:
+        await update.message.reply_text(
+            "Неправильний формат часу. Будь ласка, використовуйте формат ГГ:ХХ (наприклад, 19:00)"
+        )
+        return START
+
+
+async def training_end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    try:
+        end_time_text = update.message.text
+        end_time_obj = datetime.datetime.strptime(end_time_text, "%H:%M").time()
+
+        context.user_data['end_hour'] = end_time_obj.hour
+        context.user_data['end_min'] = end_time_obj.minute
+        is_onetime = context.user_data['training_type'] == "training_onetime"
+        team = context.user_data['training_team']
+        with_coach = context.user_data['with_coach']
+        start_hour = context.user_data['start_hour']
+        start_min = context.user_data['start_min']
+        end_hour = context.user_data['end_hour']
+        end_min = context.user_data['end_min']
+
+        if is_onetime:
+            date_str = context.user_data['training_date']
+            one_time_trainings = load_data(ONE_TIME_TRAININGS_FILE)
+
+            new_training = {
+                "date": date_str,
+                "start_hour": start_hour,
+                "start_min": start_min,
+                "end_hour": end_hour,
+                "end_min": end_min,
+                "team": team,
+                "with_coach": with_coach
+            }
+            last_id = list(one_time_trainings)[-1] if one_time_trainings else 0
+            one_time_trainings[int(last_id) + 1] = new_training
+            save_data(one_time_trainings, ONE_TIME_TRAININGS_FILE)
+        else:
+            constant_trainings = load_data(CONSTANT_TRAININGS_FILE)
+            last_id = list(constant_trainings)[-1] if constant_trainings else 0
+            weekday = context.user_data['training_weekday']
+            new_training = {
+                "weekday": weekday,
+                "start_hour": start_hour,
+                "start_min": start_min,
+                "end_hour": end_hour,
+                "end_min": end_min,
+                "team": team,
+                "with_coach": with_coach,
+            }
+            constant_trainings[int(last_id) + 1] = new_training
+            save_data(constant_trainings, CONSTANT_TRAININGS_FILE)
+        return ConversationHandler.END
+    except ValueError:
+        await update.message.reply_text(
+            "Неправильний формат часу. Будь ласка, використовуйте формат ГГ:ХХ (наприклад, 21:00)"
+        )
+        return END
+
+
+def get_next_training(team=None):
+    """
+    Get the next training session for a specified team from both constant and one-time trainings.
+
+    Args:
+        team (str): The team name ('Male' or 'Female')
+
+    Returns:
+        dict: Information about the next training session or None if no future trainings
+    """
+    # Load training data
+    with open('constant_trainings.json', 'r') as f:
+        constant_trainings = json.load(f)
+
+    with open('one_time_trainings.json', 'r') as f:
+        one_time_trainings = json.load(f)
+
+    # Get current date and time
+    now = datetime.datetime.now()
+    current_date = now.date()
+    current_time = now.time()
+    current_weekday = now.weekday()  # 0 is Monday, 6 is Sunday
+
+    # Calculate days until next occurrence of each constant training
+    next_constant_trainings = []
+    for training_id, training in constant_trainings.items():
+        if training["team"] != team:
+            continue
+
+        training_weekday = training["weekday"]
+        training_time = datetime.time(hour=training["start_hour"], minute=training["start_min"])
+
+        # Calculate days until next occurrence
+        days_until = (training_weekday - current_weekday) % 7
+
+        # If it's the same day, check if the training has already passed
+        if days_until == 0 and training_time <= current_time:
+            days_until = 7  # Move to next week
+
+        # Calculate the date of the next occurrence
+        next_date = current_date + datetime.timedelta(days=days_until)
+
+        next_constant_trainings.append({
+            "date": next_date,
+            "start_hour": training["start_hour"],
+            "start_min": training["start_min"],
+            "end_hour": training["end_hour"],
+            "end_min": training["end_min"],
+            "team": training["team"],
+            "with_coach": training["with_coach"],
+            "type": "constant"
+        })
+
+    # Filter and convert one-time trainings
+    next_one_time_trainings = []
+    for training_id, training in one_time_trainings.items():
+        if training["team"] != team:
+            continue
+
+        # Parse the date string (format: DD.MM.YYYY)
+        day, month, year = map(int, training["date"].split('.'))
+        training_date = datetime.date(year, month, day)
+
+        # Skip if the training is in the past
+        if training_date < current_date:
+            continue
+
+        # If it's today, check if the training has already passed
+        if training_date == current_date:
+            training_time = datetime.time(hour=training["start_hour"], minute=training["start_min"])
+            if training_time <= current_time:
+                continue
+
+        # Check if end_hour is less than start_hour (invalid time)
+        if training["end_hour"] < training["start_hour"] or (
+                training["end_hour"] == training["start_hour"] and training["end_min"] < training["start_min"]):
+            continue
+
+        next_one_time_trainings.append({
+            "date": training_date,
+            "start_hour": training["start_hour"],
+            "start_min": training["start_min"],
+            "end_hour": training["end_hour"],
+            "end_min": training["end_min"],
+            "team": training["team"],
+            "with_coach": training["with_coach"],
+            "type": "one-time"
+        })
+
+    # Combine and sort all trainings
+    all_trainings = next_constant_trainings + next_one_time_trainings
+
+    if not all_trainings:
+        return None
+
+    # Sort by date, then by start time
+    all_trainings.sort(key=lambda x: (
+        x["date"],
+        x["start_hour"],
+        x["start_min"]
+    ))
+
+    # Return the next training
+    next_training = all_trainings[0]
+
+    # Format the result
+    result = {
+        "date": next_training["date"].strftime("%d.%m.%Y"),
+        "start_time": f"{next_training['start_hour']:02d}:{next_training['start_min']:02d}",
+        "end_time": f"{next_training['end_hour']:02d}:{next_training['end_min']:02d}",
+        "team": next_training["team"],
+        "with_coach": next_training["with_coach"],
+        "type": next_training["type"]
+    }
+
+    return result
+
+# def get_next_training(user_team=None):
+#     # Get current time in Ukraine (Kyiv)
+#     now = datetime.datetime.now(pytz.timezone('Europe/Kiev'))
+#
+#     # Load one-time trainings
+#     one_time_trainings = load_data(ONE_TIME_TRAININGS_FILE)
+#
+#     # Filter out past one-time trainings
+#     current_one_time_trainings = []
+#     for training in one_time_trainings:
+#         training_date = datetime.datetime.strptime(training["date"], "%d.%m.%Y").date()
+#         if training_date >= now.date():
+#             # If user team is specified, filter by team
+#             if user_team is None or training["team"] == user_team or training["team"] == "Both":
+#                 current_one_time_trainings.append(training)
+#
+#     # Find the closest one-time training
+#     closest_one_time = None
+#     days_to_closest_one_time = float('inf')
+#
+#     for training in current_one_time_trainings:
+#         training_date = datetime.datetime.strptime(training["date"], "%d.%m.%Y").date()
+#         days_diff = (training_date - now.date()).days
+#
+#         if days_diff < days_to_closest_one_time:
+#             closest_one_time = training
+#             days_to_closest_one_time = days_diff
+#
+#     # Find the closest recurring training from schedule
+#     current_weekday = now.weekday()
+#     next_recurring = None
+#     days_to_next_recurring = 7  # Maximum days to next training
+#
+#     for training in TRAINING_SCHEDULE:
+#         # Check if training has team info (in case of older entries without it)
+#         if len(training) >= 6:  # New format includes team and coach info
+#             weekday, start_hour, start_min, end_hour, end_min, team, *rest = training
+#             # Filter by team if user_team is specified
+#             if user_team is not None and team != user_team and team != "Both":
+#                 continue
+#         else:  # Old format without team info
+#             weekday, start_hour, start_min, end_hour, end_min = training
+#
+#         # Calculate days until this training
+#         days_diff = (weekday - current_weekday) % 7
+#
+#         # If training is today, check if it's already passed
+#         if days_diff == 0:
+#             training_time = now.replace(hour=start_hour, minute=start_min, second=0, microsecond=0)
+#             if now.time() >= training_time.time():
+#                 days_diff = 7  # Move to next week
+#
+#         if days_diff < days_to_next_recurring:
+#             next_recurring = training
+#             days_to_next_recurring = days_diff
+#
+#     # Determine which is sooner: one-time or recurring
+#     if closest_one_time and days_to_closest_one_time <= days_to_next_recurring:
+#         # One-time training is sooner
+#         training_date = datetime.datetime.strptime(closest_one_time["date"], "%d.%m.%Y").date()
+#         start_hour = closest_one_time["start_hour"]
+#         start_min = closest_one_time["start_min"]
+#         end_hour = closest_one_time["end_hour"]
+#         end_min = closest_one_time["end_min"]
+#         team = closest_one_time["team"]
+#         with_coach = closest_one_time.get("with_coach", False)
+#
+#         date_str = training_date.strftime("%d.%m.%Y")
+#         days_diff = days_to_closest_one_time
+#         is_one_time = True
+#
+#     elif next_recurring:
+#         # Recurring training is sooner
+#         if len(next_recurring) >= 6:  # New format with team info
+#             weekday, start_hour, start_min, end_hour, end_min, team, *rest = next_recurring
+#             with_coach = rest[0] if rest else False
+#         else:  # Old format without team info
+#             weekday, start_hour, start_min, end_hour, end_min = next_recurring
+#             team = "Both"  # Default
+#             with_coach = False
+#
+#         next_date = now + datetime.timedelta(days=days_to_next_recurring)
+#         date_str = next_date.strftime("%d.%m.%Y")
+#         days_diff = days_to_next_recurring
+#         is_one_time = False
+#
+#     else:
+#         return "Не вдалося визначити наступне тренування."
+#
+#     # Format message
+#     weekday_names = ['понеділок', 'вівторок', 'середу', 'четвер', "п'ятницю", 'суботу', 'неділю']
+#
+#     if is_one_time:
+#         weekday_name = weekday_names[training_date.weekday()]
+#     else:
+#         weekday_name = weekday_names[next_recurring[0]]
+#
+#     # Day text
+#     if days_diff == 0:
+#         day_text = "сьогодні"
+#     elif days_diff == 1:
+#         day_text = "завтра"
+#     else:
+#         day_text = f"через {days_diff} дні(в)"
+#
+#     # Team text
+#     team_text = ""
+#     if team != "Both":
+#         team_text = f" для {'чоловічої' if team == 'Male' else 'жіночої'} команди"
+#
+#     # Coach text
+#     coach_text = " з тренером" if with_coach else ""
+#
+#     message = (f"Наступне тренування{team_text}{coach_text} {day_text} ({weekday_name}), {date_str} "
+#                f"з {start_hour:02d}:{start_min:02d} до {end_hour:02d}:{end_min:02d}")
+#
+#     return message
