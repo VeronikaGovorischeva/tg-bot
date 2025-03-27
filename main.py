@@ -2,6 +2,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from trainings import *
 from commands import *
 from registration import *
+from voting import view_votes, vote_training, handle_vote
 
 chillnttestbot_token = "7640419427:AAHUciixP3FyY6PLahICwer6ybFLwQRqucg"
 idontknownamesbot_token = "8010698609:AAGZhl3Cfqh_YRaV1u9ROm0xySNUgLIzIC0"
@@ -66,7 +67,12 @@ if __name__ == "__main__":
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("add_training", add_training))
-    app.add_handler(CommandHandler("next_training", get_next_training))
+    app.add_handler(CommandHandler("next_training", next_training))
+    app.add_handler(CommandHandler("next_training", next_training))
+    app.add_handler(CommandHandler("vote_training", vote_training))
+    app.add_handler(CommandHandler("view_votes", view_votes))
+    app.add_handler(CallbackQueryHandler(handle_vote, pattern=r"^vote_"))
+    app.add_handler(CommandHandler("last_training", last_training))
     # app.add_handler(CommandHandler("next_game", next_game))
     # app.add_handler(CommandHandler("check_debt", check_debt))
     #

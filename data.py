@@ -12,3 +12,4 @@ def load_data(file, *args):
 def save_data(data, file):
     with open(file, 'w') as f:
         json.dump(data, f, indent=4)
+

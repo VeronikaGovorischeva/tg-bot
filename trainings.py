@@ -1,7 +1,7 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 import datetime
-from config import TRAINING_SCHEDULE
+from config import TRAINING_SCHEDULE, JSON_FILE
 import json
 import pytz
 from data import load_data, save_data
@@ -226,123 +226,280 @@ async def training_end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         )
         return END
 
-
 def get_next_training(team=None):
     """
-    Get the next training session for a specified team from both constant and one-time trainings.
-
-    Args:
-        team (str): The team name ('Male' or 'Female')
+    Fetch the next training session, considering both one-time and recurring trainings.
 
     Returns:
-        dict: Information about the next training session or None if no future trainings
+        dict | None: A dictionary containing training details, or None if no training is found.
     """
-    # Load training data
-    with open('constant_trainings.json', 'r') as f:
-        constant_trainings = json.load(f)
+    one_time_trainings = load_data(ONE_TIME_TRAININGS_FILE, {})
+    constant_trainings = load_data(CONSTANT_TRAININGS_FILE, {})
 
-    with open('one_time_trainings.json', 'r') as f:
-        one_time_trainings = json.load(f)
-
-    # Get current date and time
     now = datetime.datetime.now()
     current_date = now.date()
     current_time = now.time()
-    current_weekday = now.weekday()  # 0 is Monday, 6 is Sunday
+    current_weekday = now.weekday()
 
-    # Calculate days until next occurrence of each constant training
-    next_constant_trainings = []
-    for training_id, training in constant_trainings.items():
-        if training["team"] != team:
+    all_trainings = []
+
+    # Process constant trainings
+    for training in constant_trainings.values():
+        if not isinstance(training, dict) or training.get("team") not in [team, "Both", None]:
             continue
 
-        training_weekday = training["weekday"]
-        training_time = datetime.time(hour=training["start_hour"], minute=training["start_min"])
+        training_weekday = training.get("weekday", -1)
+        training_time = datetime.time(hour=training.get("start_hour", 0), minute=training.get("start_min", 0))
 
-        # Calculate days until next occurrence
+        if training_weekday == -1:
+            continue
+
         days_until = (training_weekday - current_weekday) % 7
-
-        # If it's the same day, check if the training has already passed
         if days_until == 0 and training_time <= current_time:
-            days_until = 7  # Move to next week
+            days_until = 7
 
-        # Calculate the date of the next occurrence
         next_date = current_date + datetime.timedelta(days=days_until)
 
-        next_constant_trainings.append({
+        all_trainings.append({
             "date": next_date,
-            "start_hour": training["start_hour"],
-            "start_min": training["start_min"],
-            "end_hour": training["end_hour"],
-            "end_min": training["end_min"],
-            "team": training["team"],
-            "with_coach": training["with_coach"],
-            "type": "constant"
+            "start_hour": training.get("start_hour", 0),
+            "start_min": training.get("start_min", 0),
+            "end_hour": training.get("end_hour", 0),
+            "end_min": training.get("end_min", 0),
+            "team": str(training.get("team", "Both")),
+            "with_coach": bool(training.get("with_coach", False)),
+            "type": "constant",
+            "days_until": days_until
         })
 
-    # Filter and convert one-time trainings
-    next_one_time_trainings = []
-    for training_id, training in one_time_trainings.items():
-        if training["team"] != team:
+    # Process one-time trainings
+    for training in one_time_trainings.values():
+        if not isinstance(training, dict) or training.get("team") not in [team, "Both", None]:
             continue
 
-        # Parse the date string (format: DD.MM.YYYY)
-        day, month, year = map(int, training["date"].split('.'))
-        training_date = datetime.date(year, month, day)
+        try:
+            training_date = datetime.datetime.strptime(training.get("date", ""), "%d.%m.%Y").date()
+        except (ValueError, TypeError):
+            continue
 
-        # Skip if the training is in the past
         if training_date < current_date:
             continue
 
-        # If it's today, check if the training has already passed
-        if training_date == current_date:
-            training_time = datetime.time(hour=training["start_hour"], minute=training["start_min"])
-            if training_time <= current_time:
-                continue
-
-        # Check if end_hour is less than start_hour (invalid time)
-        if training["end_hour"] < training["start_hour"] or (
-                training["end_hour"] == training["start_hour"] and training["end_min"] < training["start_min"]):
+        days_until = (training_date - current_date).days
+        training_time = datetime.time(hour=training.get("start_hour", 0), minute=training.get("start_min", 0))
+        if training_date == current_date and training_time <= current_time:
             continue
 
-        next_one_time_trainings.append({
+        all_trainings.append({
             "date": training_date,
-            "start_hour": training["start_hour"],
-            "start_min": training["start_min"],
-            "end_hour": training["end_hour"],
-            "end_min": training["end_min"],
-            "team": training["team"],
-            "with_coach": training["with_coach"],
-            "type": "one-time"
+            "start_hour": training.get("start_hour", 0),
+            "start_min": training.get("start_min", 0),
+            "end_hour": training.get("end_hour", 0),
+            "end_min": training.get("end_min", 0),
+            "team": str(training.get("team", "Both")),
+            "with_coach": bool(training.get("with_coach", False)),
+            "type": "one-time",
+            "days_until": days_until
         })
 
-    # Combine and sort all trainings
-    all_trainings = next_constant_trainings + next_one_time_trainings
+    # Sort trainings by date and start time
+    all_trainings.sort(key=lambda x: (x["date"], x["start_hour"], x["start_min"]))
+
+    return all_trainings[0] if all_trainings else None
+
+
+
+# def get_next_training(team=None):
+#     """
+#     Get the next training session for a specified team from both constant and one-time trainings.
+#
+#     Args:
+#         team (str): The team name ('Male' or 'Female')
+#
+#     Returns:
+#         dict: Information about the next training session or None if no future trainings
+#     """
+#     # Load training data
+#     with open('constant_trainings.json', 'r') as f:
+#         constant_trainings = json.load(f)
+#
+#     with open('one_time_trainings.json', 'r') as f:
+#         one_time_trainings = json.load(f)
+#
+#     # Get current date and time
+#     now = datetime.datetime.now()
+#     current_date = now.date()
+#     current_time = now.time()
+#     current_weekday = now.weekday()  # 0 is Monday, 6 is Sunday
+#
+#     # Calculate days until next occurrence of each constant training
+#     next_constant_trainings = []
+#     for training_id, training in constant_trainings.items():
+#         if training["team"] != team:
+#             continue
+#
+#         training_weekday = training["weekday"]
+#         training_time = datetime.time(hour=training["start_hour"], minute=training["start_min"])
+#
+#         # Calculate days until next occurrence
+#         days_until = (training_weekday - current_weekday) % 7
+#
+#         # If it's the same day, check if the training has already passed
+#         if days_until == 0 and training_time <= current_time:
+#             days_until = 7  # Move to next week
+#
+#         # Calculate the date of the next occurrence
+#         next_date = current_date + datetime.timedelta(days=days_until)
+#
+#         next_constant_trainings.append({
+#             "date": next_date,
+#             "start_hour": training["start_hour"],
+#             "start_min": training["start_min"],
+#             "end_hour": training["end_hour"],
+#             "end_min": training["end_min"],
+#             "team": training["team"],
+#             "with_coach": training["with_coach"],
+#             "type": "constant"
+#         })
+#
+#     # Filter and convert one-time trainings
+#     next_one_time_trainings = []
+#     for training_id, training in one_time_trainings.items():
+#         if training["team"] != team:
+#             continue
+#
+#         # Parse the date string (format: DD.MM.YYYY)
+#         day, month, year = map(int, training["date"].split('.'))
+#         training_date = datetime.date(year, month, day)
+#
+#         # Skip if the training is in the past
+#         if training_date < current_date:
+#             continue
+#
+#         # If it's today, check if the training has already passed
+#         if training_date == current_date:
+#             training_time = datetime.time(hour=training["start_hour"], minute=training["start_min"])
+#             if training_time <= current_time:
+#                 continue
+#
+#         # Check if end_hour is less than start_hour (invalid time)
+#         if training["end_hour"] < training["start_hour"] or (
+#                 training["end_hour"] == training["start_hour"] and training["end_min"] < training["start_min"]):
+#             continue
+#
+#         next_one_time_trainings.append({
+#             "date": training_date,
+#             "start_hour": training["start_hour"],
+#             "start_min": training["start_min"],
+#             "end_hour": training["end_hour"],
+#             "end_min": training["end_min"],
+#             "team": training["team"],
+#             "with_coach": training["with_coach"],
+#             "type": "one-time"
+#         })
+#
+#     # Combine and sort all trainings
+#     all_trainings = next_constant_trainings + next_one_time_trainings
+#
+#     if not all_trainings:
+#         return None
+#
+#     # Sort by date, then by start time
+#     all_trainings.sort(key=lambda x: (
+#         x["date"],
+#         x["start_hour"],
+#         x["start_min"]
+#     ))
+#
+#     # Return the next training
+#     next_training = all_trainings[0]
+#
+#     # Format the result
+#     result = {
+#         "date": next_training["date"].strftime("%d.%m.%Y"),
+#         "start_time": f"{next_training['start_hour']:02d}:{next_training['start_min']:02d}",
+#         "end_time": f"{next_training['end_hour']:02d}:{next_training['end_min']:02d}",
+#         "team": next_training["team"],
+#         "with_coach": next_training["with_coach"],
+#         "type": next_training["type"]
+#     }
+
+
+async def next_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handles the /next_training command, fetching and formatting the next training session.
+    """
+    user_id = str(update.message.from_user.id)
+    user_data = load_data(JSON_FILE)
+
+    if user_id not in user_data or "team" not in user_data[user_id]:
+        await update.message.reply_text("Будь ласка, завершіть реєстрацію, щоб отримувати інформацію про тренування.")
+        return
+
+    team = user_data[user_id]["team"]
+    training_info = get_next_training(team)
+
+    if not training_info:
+        await update.message.reply_text("Немає запланованих тренувань.")
+        return
+
+    # Formatting message
+    date_str = training_info["date"].strftime("%d.%m.%Y")
+    start_time = f"{training_info['start_hour']:02d}:{training_info['start_min']:02d}"
+    end_time = f"{training_info['end_hour']:02d}:{training_info['end_min']:02d}"
+    team_str = f" для {'чоловічої' if training_info['team'] == 'Male' else 'жіночої'} команди" if training_info[
+                                                                                                      'team'] != "Both" else " для обох команд"
+    coach_str = " з тренером" if training_info["with_coach"] else ""
+
+    weekday_names = ['понеділок', 'вівторок', 'середу', 'четвер', "п'ятницю", 'суботу', 'неділю']
+    weekday_name = weekday_names[training_info["date"].weekday()]
+
+    if training_info["days_until"] == 0:
+        day_text = "сьогодні"
+    elif training_info["days_until"] == 1:
+        day_text = "завтра"
+    else:
+        day_text = f"через {training_info['days_until']} дні(в)"
+
+    message = (
+        f"Наступне тренування{team_str}{coach_str} {day_text} в {weekday_name}, {date_str} з {start_time} до {end_time}."
+    )
+
+    await update.message.reply_text(message)
+
+
+def get_last_training():
+    one_time_trainings = load_data(ONE_TIME_TRAININGS_FILE, {})
+    constant_trainings = load_data(CONSTANT_TRAININGS_FILE, {})
+
+    all_trainings = []
+
+    for tid, training in one_time_trainings.items():
+        date_obj = datetime.datetime.strptime(training["date"], "%d.%m.%Y").date()
+        if date_obj < datetime.date.today():
+            all_trainings.append((date_obj, tid))
+
+    today_weekday = datetime.date.today().weekday()
+    for tid, training in constant_trainings.items():
+        if training["weekday"] < today_weekday:
+            last_training_date = datetime.date.today() - datetime.timedelta(days=(today_weekday - training["weekday"]))
+            all_trainings.append((last_training_date, tid))
 
     if not all_trainings:
-        return None
+        return None, None
 
-    # Sort by date, then by start time
-    all_trainings.sort(key=lambda x: (
-        x["date"],
-        x["start_hour"],
-        x["start_min"]
-    ))
+    last_training = max(all_trainings, key=lambda x: x[0])
+    return last_training[0].strftime("%d.%m.%Y"), last_training[1]
 
-    # Return the next training
-    next_training = all_trainings[0]
 
-    # Format the result
-    result = {
-        "date": next_training["date"].strftime("%d.%m.%Y"),
-        "start_time": f"{next_training['start_hour']:02d}:{next_training['start_min']:02d}",
-        "end_time": f"{next_training['end_hour']:02d}:{next_training['end_min']:02d}",
-        "team": next_training["team"],
-        "with_coach": next_training["with_coach"],
-        "type": next_training["type"]
-    }
+async def last_training(update, context: ContextTypes.DEFAULT_TYPE):
+    last_training_date, training_id = get_last_training()
+    if last_training_date:
+        message = f"Останнє тренування було {last_training_date} (ID: {training_id})."
+    else:
+        message = "Немає записаних тренувань."
+    await update.message.reply_text(message)
 
-    return result
 
 # def get_next_training(user_team=None):
 #     # Get current time in Ukraine (Kyiv)
