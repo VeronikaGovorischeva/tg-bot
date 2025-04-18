@@ -7,8 +7,7 @@ import pytz
 from data import load_data, save_data
 from validation import is_authorized
 
-TYPE, TEAM, COACH, DATE, START, END, WEEKDAY = range(
-    7)
+TYPE, TEAM, COACH, DATE, START, END, WEEKDAY, START_VOTING, END_VOTING = range(9)
 
 # Path for storing one-time trainings
 ONE_TIME_TRAININGS_FILE = "one_time_trainings.json"
@@ -219,12 +218,94 @@ async def training_end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             }
             constant_trainings[int(last_id) + 1] = new_training
             save_data(constant_trainings, CONSTANT_TRAININGS_FILE)
-        return ConversationHandler.END
+        if is_onetime:
+            await update.message.reply_text("Введіть дату початку голосування (ДД.ММ.РРРР):")
+            return START_VOTING
+        else:
+            keyboard = [[InlineKeyboardButton(day, callback_data=f"voting_day_{i}")]
+                        for i, day in
+                        enumerate(["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"])]
+            await update.message.reply_text("Оберіть день тижня для початку голосування:",
+                                            reply_markup=InlineKeyboardMarkup(keyboard))
+            return START_VOTING
     except ValueError:
         await update.message.reply_text(
             "Неправильний формат часу. Будь ласка, використовуйте формат ГГ:ХХ (наприклад, 21:00)"
         )
         return END
+async def training_start_voting(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if context.user_data['training_type'] == "training_onetime":
+        context.user_data['start_voting'] = update.message.text
+        await update.message.reply_text("Введіть дату завершення голосування (ДД.ММ.РРРР):")
+        return END_VOTING
+    else:
+        query = update.callback_query
+        await query.answer()
+        context.user_data['start_voting'] = int(query.data.replace("voting_day_", ""))
+        keyboard = [[InlineKeyboardButton(day, callback_data=f"voting_end_day_{i}")]
+                    for i, day in enumerate(["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"])]
+        await query.edit_message_text("Оберіть день тижня для завершення голосування:", reply_markup=InlineKeyboardMarkup(keyboard))
+        return END_VOTING
+
+async def training_end_voting(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    is_onetime = context.user_data['training_type'] == "training_onetime"
+
+    if is_onetime:
+        context.user_data['end_voting'] = update.message.text
+    else:
+        query = update.callback_query
+        await query.answer()
+        context.user_data['end_voting'] = int(query.data.replace("voting_end_day_", ""))
+
+    is_onetime = context.user_data['training_type'] == "training_onetime"
+    team = context.user_data['training_team']
+    with_coach = context.user_data['with_coach']
+    start_hour = context.user_data['start_hour']
+    start_min = context.user_data['start_min']
+    end_hour = context.user_data['end_hour']
+    end_min = context.user_data['end_min']
+    start_voting = context.user_data['start_voting']
+    end_voting = context.user_data['end_voting']
+
+    if is_onetime:
+        date_str = context.user_data['training_date']
+        one_time_trainings = load_data(ONE_TIME_TRAININGS_FILE)
+
+        new_training = {
+            "date": date_str,
+            "start_hour": start_hour,
+            "start_min": start_min,
+            "end_hour": end_hour,
+            "end_min": end_min,
+            "team": team,
+            "with_coach": with_coach,
+            "start_voting": start_voting,
+            "end_voting": end_voting
+        }
+        last_id = list(one_time_trainings)[-1] if one_time_trainings else 0
+        one_time_trainings[int(last_id) + 1] = new_training
+        save_data(one_time_trainings, ONE_TIME_TRAININGS_FILE)
+    else:
+        constant_trainings = load_data(CONSTANT_TRAININGS_FILE)
+        last_id = list(constant_trainings)[-1] if constant_trainings else 0
+        weekday = context.user_data['training_weekday']
+        new_training = {
+            "weekday": weekday,
+            "start_hour": start_hour,
+            "start_min": start_min,
+            "end_hour": end_hour,
+            "end_min": end_min,
+            "team": team,
+            "with_coach": with_coach,
+            "start_voting": start_voting,
+            "end_voting": end_voting
+        }
+        constant_trainings[int(last_id) + 1] = new_training
+        save_data(constant_trainings, CONSTANT_TRAININGS_FILE)
+
+    await update.message.reply_text("Тренування успішно збережено!")
+    return ConversationHandler.END
+
 
 def get_next_training(team=None):
     """
@@ -306,6 +387,93 @@ def get_next_training(team=None):
     all_trainings.sort(key=lambda x: (x["date"], x["start_hour"], x["start_min"]))
 
     return all_trainings[0] if all_trainings else None
+
+def get_next_week_trainings(team=None):
+    from datetime import datetime, timedelta
+
+    one_time_trainings = load_data(ONE_TIME_TRAININGS_FILE, {})
+    constant_trainings = load_data(CONSTANT_TRAININGS_FILE, {})
+
+    now = datetime.now()
+    current_date = now.date()
+    current_time = now.time()
+    current_weekday = now.weekday()
+
+    end_date = current_date + timedelta(days=7)
+    trainings = []
+
+    # Constant trainings
+    for training in constant_trainings.values():
+        if training.get("team") not in [team, "Both", None]:
+            continue
+        training_weekday = training.get("weekday")
+        if training_weekday is None:
+            continue
+        for i in range(1, 8):  # next 7 days
+            training_date = current_date + timedelta(days=i)
+            if training_date.weekday() == training_weekday:
+                trainings.append({
+                    "date": training_date,
+                    "start_hour": training["start_hour"],
+                    "start_min": training["start_min"],
+                    "end_hour": training["end_hour"],
+                    "end_min": training["end_min"],
+                    "team": training["team"],
+                    "with_coach": training["with_coach"],
+                    "type": "constant"
+                })
+
+    # One-time trainings
+    for training in one_time_trainings.values():
+        if training.get("team") not in [team, "Both", None]:
+            continue
+        try:
+            training_date = datetime.strptime(training["date"], "%d.%m.%Y").date()
+        except Exception:
+            continue
+        if current_date <= training_date <= end_date:
+            trainings.append({
+                "date": training_date,
+                "start_hour": training["start_hour"],
+                "start_min": training["start_min"],
+                "end_hour": training["end_hour"],
+                "end_min": training["end_min"],
+                "team": training["team"],
+                "with_coach": training["with_coach"],
+                "type": "one-time"
+            })
+
+    trainings.sort(key=lambda x: (x["date"], x["start_hour"], x["start_min"]))
+    return trainings
+
+
+async def week_trainings(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.message.from_user.id)
+    user_data = load_data(JSON_FILE)
+
+    if user_id not in user_data or "team" not in user_data[user_id]:
+        await update.message.reply_text("Будь ласка, завершіть реєстрацію.")
+        return
+
+    team = user_data[user_id]["team"]
+    trainings = get_next_week_trainings(team)
+
+    if not trainings:
+        await update.message.reply_text("Немає тренувань у найближчі 7 днів.")
+        return
+
+    message = "📅 Тренування на тиждень:\n\n"
+    weekday_names = ['Понеділок', 'Вівторок', 'Середа', 'Четвер', "П'ятниця", 'Субота', 'Неділя']
+    for t in trainings:
+        date_str = t["date"].strftime("%d.%m.%Y")
+        start = f"{t['start_hour']:02d}:{t['start_min']:02d}"
+        end = f"{t['end_hour']:02d}:{t['end_min']:02d}"
+        coach_str = " з тренером" if t["with_coach"] else ""
+        team_str = "" if t["team"] == "Both" else f" ({'чоловіча' if t['team'] == 'Male' else 'жіноча'} команда)"
+        day = weekday_names[t["date"].weekday()]
+        message += f"• {day}, {date_str} з {start} до {end}{coach_str}{team_str} ({t['type']})\n"
+
+    await update.message.reply_text(message)
 
 
 

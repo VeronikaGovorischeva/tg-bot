@@ -2,6 +2,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from trainings import *
 from commands import *
 from registration import *
+from notifier import *
 from voting import view_votes, vote_training, handle_vote
 
 chillnttestbot_token = "7640419427:AAHUciixP3FyY6PLahICwer6ybFLwQRqucg"
@@ -34,6 +35,10 @@ if __name__ == "__main__":
             START: [MessageHandler(filters.TEXT & ~filters.COMMAND, training_start)],
             END: [MessageHandler(filters.TEXT & ~filters.COMMAND, training_end)],
             WEEKDAY: [CallbackQueryHandler(training_weekday)],
+            START_VOTING: [MessageHandler(filters.TEXT & ~filters.COMMAND, training_start_voting),
+                           CallbackQueryHandler(training_start_voting, pattern=r"^voting_day_")],
+            END_VOTING: [MessageHandler(filters.TEXT & ~filters.COMMAND, training_end_voting),
+                         CallbackQueryHandler(training_end_voting, pattern=r"^voting_end_day_")],
         },
         fallbacks=[CommandHandler('cancel', cancel)],
     )
@@ -73,6 +78,9 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("view_votes", view_votes))
     app.add_handler(CallbackQueryHandler(handle_vote, pattern=r"^vote_"))
     app.add_handler(CommandHandler("last_training", last_training))
+    app.add_handler(CommandHandler("week_trainings", week_trainings))
+    app.add_handler(CommandHandler("check_time", check_time))
+
     # app.add_handler(CommandHandler("next_game", next_game))
     # app.add_handler(CommandHandler("check_debt", check_debt))
     #
@@ -83,3 +91,8 @@ if __name__ == "__main__":
 
     app.add_error_handler(error)
     app.run_polling(poll_interval=0.1)
+    import asyncio
+    from notifier import schedule_notifications, check_time
+
+    app.job_queue.run_once(lambda c: asyncio.create_task(schedule_notifications(app)), 0)
+
