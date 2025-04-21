@@ -186,38 +186,6 @@ async def training_end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         start_min = context.user_data['start_min']
         end_hour = context.user_data['end_hour']
         end_min = context.user_data['end_min']
-
-        if is_onetime:
-            date_str = context.user_data['training_date']
-            one_time_trainings = load_data(ONE_TIME_TRAININGS_FILE)
-
-            new_training = {
-                "date": date_str,
-                "start_hour": start_hour,
-                "start_min": start_min,
-                "end_hour": end_hour,
-                "end_min": end_min,
-                "team": team,
-                "with_coach": with_coach
-            }
-            last_id = list(one_time_trainings)[-1] if one_time_trainings else 0
-            one_time_trainings[int(last_id) + 1] = new_training
-            save_data(one_time_trainings, ONE_TIME_TRAININGS_FILE)
-        else:
-            constant_trainings = load_data(CONSTANT_TRAININGS_FILE)
-            last_id = list(constant_trainings)[-1] if constant_trainings else 0
-            weekday = context.user_data['training_weekday']
-            new_training = {
-                "weekday": weekday,
-                "start_hour": start_hour,
-                "start_min": start_min,
-                "end_hour": end_hour,
-                "end_min": end_min,
-                "team": team,
-                "with_coach": with_coach,
-            }
-            constant_trainings[int(last_id) + 1] = new_training
-            save_data(constant_trainings, CONSTANT_TRAININGS_FILE)
         if is_onetime:
             await update.message.reply_text("Введіть дату початку голосування (ДД.ММ.РРРР):")
             return START_VOTING
@@ -303,7 +271,10 @@ async def training_end_voting(update: Update, context: ContextTypes.DEFAULT_TYPE
         constant_trainings[int(last_id) + 1] = new_training
         save_data(constant_trainings, CONSTANT_TRAININGS_FILE)
 
-    await update.message.reply_text("Тренування успішно збережено!")
+    if update.message:
+        await update.message.reply_text("Тренування успішно збережено!")
+    elif update.callback_query:
+        await update.callback_query.message.reply_text("Тренування успішно збережено!")
     return ConversationHandler.END
 
 
@@ -413,6 +384,9 @@ def get_next_week_trainings(team=None):
             training_date = current_date + timedelta(days=i)
             if training_date.weekday() == training_weekday:
                 trainings.append({
+                    "weekday": training_weekday,
+                    "start_voting": training.get("start_voting"),
+                    "end_voting": training.get("end_voting"),
                     "date": training_date,
                     "start_hour": training["start_hour"],
                     "start_min": training["start_min"],
@@ -433,6 +407,8 @@ def get_next_week_trainings(team=None):
             continue
         if current_date <= training_date <= end_date:
             trainings.append({
+                "start_voting": training.get("start_voting"),
+                "end_voting": training.get("end_voting"),
                 "date": training_date,
                 "start_hour": training["start_hour"],
                 "start_min": training["start_min"],

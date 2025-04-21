@@ -3,7 +3,7 @@ from trainings import *
 from commands import *
 from registration import *
 from notifier import *
-from voting import view_votes, vote_training, handle_vote
+from voting import view_votes, vote_training, handle_vote, handle_training_vote_selection, handle_view_votes_selection
 
 chillnttestbot_token = "7640419427:AAHUciixP3FyY6PLahICwer6ybFLwQRqucg"
 idontknownamesbot_token = "8010698609:AAGZhl3Cfqh_YRaV1u9ROm0xySNUgLIzIC0"
@@ -80,6 +80,11 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("last_training", last_training))
     app.add_handler(CommandHandler("week_trainings", week_trainings))
     app.add_handler(CommandHandler("check_time", check_time))
+    app.add_handler(CommandHandler("vote_training", vote_training))
+    app.add_handler(CommandHandler("view_votes", view_votes))
+    app.add_handler(CallbackQueryHandler(handle_view_votes_selection, pattern=r"^view_votes_\d+"))
+    app.add_handler(CallbackQueryHandler(handle_training_vote_selection, pattern=r"^training_vote_\d+"))
+    app.add_handler(CallbackQueryHandler(handle_vote, pattern=r"^vote_"))
 
     # app.add_handler(CommandHandler("next_game", next_game))
     # app.add_handler(CommandHandler("check_debt", check_debt))
