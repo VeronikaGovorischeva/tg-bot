@@ -1,11 +1,12 @@
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler
 
-from payments import charge_all
+from payments import *
 from trainings import *
 from commands import *
 from registration import *
 from notifier import *
 from voting import view_votes, vote_training, handle_vote, handle_training_vote_selection, handle_view_votes_selection
+
 
 chillnttestbot_token = "7640419427:AAHUciixP3FyY6PLahICwer6ybFLwQRqucg"
 idontknownamesbot_token = "8010698609:AAGZhl3Cfqh_YRaV1u9ROm0xySNUgLIzIC0"
@@ -88,6 +89,12 @@ if __name__ == "__main__":
     app.add_handler(CallbackQueryHandler(handle_training_vote_selection, pattern=r"^training_vote_\d+"))
     app.add_handler(CallbackQueryHandler(handle_vote, pattern=r"^vote_"))
     app.add_handler(CommandHandler("charge_all", charge_all))
+    app.add_handler(CallbackQueryHandler(handle_payment_confirmation, pattern=r"^paid_(yes|no)_\d+"))
+    app.add_handler(CommandHandler("collect_debts", collect_debts))
+    app.add_handler(CallbackQueryHandler(handle_debt_check, pattern=r"^debt_check_\d+"))
+    app.add_handler(CommandHandler("pay_debt", pay_debt))
+    app.add_handler(CallbackQueryHandler(handle_pay_debt_selection, pattern=r"^paydebt_select_\d+$"))
+    app.add_handler(CallbackQueryHandler(handle_pay_debt_confirmation, pattern=r"^paydebt_confirm_(yes|no)$"))
 
     # app.add_handler(CommandHandler("next_game", next_game))
     # app.add_handler(CommandHandler("check_debt", check_debt))
