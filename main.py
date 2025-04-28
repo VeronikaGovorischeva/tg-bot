@@ -66,4 +66,3 @@ if __name__ == "__main__":
 
     app.run_polling(poll_interval=0.1)
     print("Bot is running")
-p
