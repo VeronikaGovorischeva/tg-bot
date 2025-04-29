@@ -4,11 +4,10 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, CallbackQueryHandler, MessageHandler, \
     filters
 import datetime
-from config import JSON_FILE
 from data import load_data, save_data
 from validation import is_authorized
 
-
+DATA_FILE="data/user_data.json"
 class TrainingType(Enum):
     ONE_TIME = "training_onetime"
     RECURRING = "training_recurring"
@@ -461,7 +460,7 @@ def get_next_week_trainings(team=None):
 
 async def week_trainings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
-    user_data = load_data(JSON_FILE)
+    user_data = load_data(DATA_FILE)
 
     if user_id not in user_data or "team" not in user_data[user_id]:
         await update.message.reply_text("Будь ласка, завершіть реєстрацію.")
@@ -493,7 +492,7 @@ async def next_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
     Handles the /next_training command, fetching and formatting the next training session.
     """
     user_id = str(update.message.from_user.id)
-    user_data = load_data(JSON_FILE)
+    user_data = load_data(DATA_FILE)
 
     if user_id not in user_data or "team" not in user_data[user_id]:
         await update.message.reply_text("Будь ласка, завершіть реєстрацію, щоб отримувати інформацію про тренування.")

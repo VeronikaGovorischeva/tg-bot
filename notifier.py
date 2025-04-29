@@ -4,13 +4,14 @@ from data import load_data
 from config import JSON_FILE
 from telegram.ext import Application
 
-ONE_TIME_TRAININGS_FILE = "one_time_trainings.json"
-CONSTANT_TRAININGS_FILE = "constant_trainings.json"
+ONE_TIME_TRAININGS_FILE = "data/one_time_trainings.json"
+CONSTANT_TRAININGS_FILE = "data/constant_trainings.json"
 
 async def check_voting_and_notify(app: Application):
     users = load_data(JSON_FILE)
     today = datetime.today().date()
     weekday = today.weekday()
+    weekday_names = ['понеділок', 'вівторок', 'середу', 'четвер', "п'ятницю", 'суботу', 'неділю']
 
     one_time_trainings = load_data(ONE_TIME_TRAININGS_FILE, {})
     constant_trainings = load_data(CONSTANT_TRAININGS_FILE, {})
@@ -32,7 +33,7 @@ async def check_voting_and_notify(app: Application):
 
     # Notify for constant trainings
     for training in constant_trainings.values():
-        if training.get("start_voting") != weekday:
+        if weekday_names[int(training.get("start_voting"))] != weekday:
             continue
 
         for uid, info in users.items():
