@@ -486,31 +486,22 @@ async def week_trainings(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(message)
 
-
-async def next_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Handles the /next_training command, fetching and formatting the next training session.
-    """
-    user_id = str(update.message.from_user.id)
-    user_data = load_data(DATA_FILE)
+def format_next_training_message(user_id: str) -> str:
+    user_data = load_data("data/user_data.json")
 
     if user_id not in user_data or "team" not in user_data[user_id]:
-        await update.message.reply_text("Будь ласка, завершіть реєстрацію, щоб отримувати інформацію про тренування.")
-        return
+        return "Будь ласка, завершіть реєстрацію, щоб отримувати інформацію про тренування."
 
     team = user_data[user_id]["team"]
     training_info = get_next_training(team)
 
     if not training_info:
-        await update.message.reply_text("Немає запланованих тренувань.")
-        return
+        return "Немає запланованих тренувань."
 
-    # Formatting message
     date_str = training_info["date"].strftime("%d.%m.%Y")
     start_time = f"{training_info['start_hour']:02d}:{training_info['start_min']:02d}"
     end_time = f"{training_info['end_hour']:02d}:{training_info['end_min']:02d}"
-    team_str = f" для {'чоловічої' if training_info['team'] == 'Male' else 'жіночої'} команди" if training_info[
-                                                                                                      'team'] != "Both" else " для обох команд"
+    team_str = f" для {'чоловічої' if training_info['team'] == 'Male' else 'жіночої'} команди" if training_info["team"] != "Both" else " для обох команд"
     coach_str = " з тренером" if training_info["with_coach"] else ""
 
     weekday_names = ['понеділок', 'вівторок', 'середу', 'четвер', "п'ятницю", 'суботу', 'неділю']
@@ -523,11 +514,16 @@ async def next_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         day_text = f"через {training_info['days_until']} дні(в)"
 
-    message = (
+    return (
         f"Наступне тренування{team_str}{coach_str} {day_text} в {weekday_name}, {date_str} з {start_time} до {end_time}."
     )
+async def next_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handles the /next_training command, fetching and formatting the next training session.
+    """
+    user_id = str(update.message.from_user.id)
 
-    await update.message.reply_text(message)
+    await update.message.reply_text(format_next_training_message(user_id))
 
 
 def get_last_training():

@@ -1,21 +1,24 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from config import JSON_FILE
 from data import load_data, save_data
 from trainings import get_last_training
 from voting import load_votes
 from datetime import datetime, timedelta
 
-PAYMENTS_FILE = "payments.json"
+DATA_FILE = "data/user_data.json"
+PAYMENTS_FILE = "data/payments.json"
+DEBTS_FILE = "data/debts.json"
+
 TRAINING_COST = 1750
 CARD_NUMBER = "5375 4141 0273 8014"
-DEBTS_FILE = "debts.json"
+
 
 def load_debts():
     data = load_data(DEBTS_FILE, [])
     if not isinstance(data, list):
         data = []
     return data
+
 
 def save_debt(debt):
     data = load_debts()
@@ -37,7 +40,7 @@ def save_payment(payment):
 
 
 async def charge_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_data = load_data(JSON_FILE)
+    user_data = load_data(DATA_FILE)
     votes = load_votes()["votes"]
     date_str, training_id = get_last_training()
 
@@ -45,8 +48,8 @@ async def charge_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await update.message.reply_text("Немає останнього тренування для нарахування.")
         return
 
-    one_time_trainings = load_data("one_time_trainings.json", {})
-    constant_trainings = load_data("constant_trainings.json", {})
+    one_time_trainings = load_data("data/one_time_trainings.json", {})
+    constant_trainings = load_data("data/constant_trainings.json", {})
 
     training_key = None
     training = None
@@ -116,6 +119,7 @@ async def charge_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     await update.message.reply_text("✅ Повідомлення з інструкцією надіслано всім, хто голосував 'так'.")
 
+
 async def handle_payment_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -140,6 +144,7 @@ async def handle_payment_confirmation(update: Update, context: ContextTypes.DEFA
         await query.edit_message_text("✅ Дякуємо! Оплату зареєстровано.")
     else:
         await query.edit_message_text("⏳ Добре! Нагадай, як тільки оплатиш.")
+
 
 async def collect_debts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     votes = load_votes()["votes"]
@@ -174,6 +179,7 @@ async def collect_debts(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Оберіть тренування для перевірки оплати:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
+
 
 async def handle_debt_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -257,6 +263,7 @@ async def pay_debt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
+
 async def handle_pay_debt_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
@@ -282,6 +289,7 @@ async def handle_pay_debt_selection(update: Update, context: ContextTypes.DEFAUL
         f"Ти точно оплатив(-ла) {selected_debt['amount']} грн за тренування {selected_debt['training_datetime']}?",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
+
 
 async def handle_pay_debt_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
@@ -309,11 +317,8 @@ async def handle_pay_debt_confirmation(update: Update, context: ContextTypes.DEF
 
     # Remove debt
     debts = load_data(DEBTS_FILE, [])
-    debts = [d for d in debts if not (d["user_id"] == selected_debt["user_id"] and d["training_id"] == selected_debt["training_id"])]
+    debts = [d for d in debts if
+             not (d["user_id"] == selected_debt["user_id"] and d["training_id"] == selected_debt["training_id"])]
     save_data(debts, DEBTS_FILE)
 
     await query.edit_message_text("✅ Дякуємо! Оплату зареєстровано і борг видалено.")
-
-
-
-

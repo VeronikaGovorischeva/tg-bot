@@ -1,56 +1,123 @@
 import asyncio
 from datetime import datetime
 from data import load_data
-from config import JSON_FILE
 from telegram.ext import Application
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
+REGISTRATION_FILE = "data/user_data.json"
 ONE_TIME_TRAININGS_FILE = "data/one_time_trainings.json"
 CONSTANT_TRAININGS_FILE = "data/constant_trainings.json"
+VOTES_FILE = "data/training_votes.json"
+WEEKDAYS = ['понеділок', 'вівторок', 'середу', 'четвер', "п'ятницю", 'суботу', 'неділю']
+VOTES_LIMIT = 14
 
-async def check_voting_and_notify(app: Application):
-    users = load_data(JSON_FILE)
+
+async def start_voting(app: Application):
+    users = load_data(REGISTRATION_FILE)
     today = datetime.today().date()
     weekday = today.weekday()
-    weekday_names = ['понеділок', 'вівторок', 'середу', 'четвер', "п'ятницю", 'суботу', 'неділю']
 
     one_time_trainings = load_data(ONE_TIME_TRAININGS_FILE, {})
     constant_trainings = load_data(CONSTANT_TRAININGS_FILE, {})
 
-    # Notify for one-time trainings
-    for training in one_time_trainings.values():
-        if training.get("start_voting") != today.strftime("%d.%m.%Y"):
-            continue
-
-        for uid, info in users.items():
-            if info.get("team") in [training.get("team"), "Both"]:
-                try:
-                    await app.bot.send_message(
-                        chat_id=int(uid),
-                        text=f"🗳 Голосування відкрите на тренування {training['date']} з {training['start_hour']:02d}:{training['start_min']:02d}. Використай /vote_training"
-                    )
-                except Exception as e:
-                    print(f"❌ Помилка надсилання для {uid}: {e}")
-
-    # Notify for constant trainings
-    for training in constant_trainings.values():
-        if weekday_names[int(training.get("start_voting"))] != weekday:
-            continue
-
-        for uid, info in users.items():
-            if info.get("team") in [training.get("team"), "Both"]:
-                try:
-                    print("📤 надсилаю повідомлення для {uid}")
-                    await app.bot.send_message(...)
-                except Exception as e:
-                    print("❌ Помилка надсилання: {e}")
+    for training_id, training in one_time_trainings.items():
+        if training.get("start_voting") == today.strftime("%d.%m.%Y"):
+            await open_training_voting(app, training, training_id, users, "one-time")
+    for training_id, training in constant_trainings.items():
+        if training.get("start_voting") == weekday:
+            await open_training_voting(app, training, training_id, users, "constant")
 
 
-async def schedule_notifications(app: Application):
-    while True:
-        await check_voting_and_notify(app)
-        await asyncio.sleep(24 * 3600)  # раз на добу
+async def check_voting_and_notify(app: Application):
+    users = load_data(REGISTRATION_FILE)
+    today = datetime.today().date()
+    weekday = today.weekday()
+
+    one_time_trainings = load_data(ONE_TIME_TRAININGS_FILE, {})
+    constant_trainings = load_data(CONSTANT_TRAININGS_FILE, {})
+    votes_data = load_data(VOTES_FILE, {"votes": {}})
+
+    for training_id, training in one_time_trainings.items():
+        if training.get("end_voting") == today.strftime("%d.%m.%Y"):
+            await send_voting_reminder(app, training, training_id, users, votes_data, "one-time")
+    for training_id, training in constant_trainings.items():
+        end_weekday = training.get("end_voting")
+        if isinstance(end_weekday, int) and end_weekday % 7 == weekday:
+            await send_voting_reminder(app, training, training_id, users, votes_data, "constant")
 
 
-async def check_time(update, context):
-    await check_voting_and_notify(context.application)
-    await update.message.reply_text("✅ Час перевірено. Якщо настав момент голосування — користувачі сповіщені.")
+async def open_training_voting(app, training, training_id, users, training_type):
+    if training_type == "one-time":
+        vote_id = f"{training['date']}_{training['start_hour']:02d}:{training['start_min']:02d}"
+        date_str = training['date']
+    else:
+        vote_id = f"const_{training['weekday']}_{training['start_hour']:02d}:{training['start_min']:02d}"
+        date_str = WEEKDAYS[training['weekday']]
+
+    message = (
+        f"🗳 Почалося голосування!\n"
+        f"Тренування {'в ' if training_type == 'constant' else ''}{date_str} "
+        f"з {training['start_hour']:02d}:{training['start_min']:02d} "
+        f"до {training['end_hour']:02d}:{training['end_min']:02d}."
+    )
+
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Так", callback_data=f"vote_yes_{vote_id}"),
+            InlineKeyboardButton("❌ Ні", callback_data=f"vote_no_{vote_id}")
+        ]
+    ])
+
+    for uid, info in users.items():
+        if info.get("team") in [training.get("team"), "Both"]:
+            try:
+                await app.bot.send_message(
+                    chat_id=int(uid),
+                    text=message,
+                    reply_markup=keyboard
+                )
+            except Exception as e:
+                print(f"❌ {training_type.upper()}: Помилка надсилання до {uid}: {e}")
+
+
+async def send_voting_reminder(app, training, training_id, users, votes_data, training_type):
+    """
+    Надсилає нагадування про голосування тим, хто ще не проголосував
+    """
+    if training_type == "one-time":
+        vote_id = f"{training['date']}_{training['start_hour']:02d}:{training['start_min']:02d}"
+        date_str = training['date']
+    else:
+        vote_id = f"const_{training['weekday']}_{training['start_hour']:02d}:{training['start_min']:02d}"
+        date_str = WEEKDAYS[training['weekday']]
+
+    votes = votes_data.get("votes", {}).get(vote_id, {})
+    voted_users = set(votes.keys())
+
+    message = (
+        f"⏰ Нагадування про голосування!\n"
+        f"Сьогодні закінчується голосування на тренування "
+        f"{'в ' if training_type == 'constant' else ''}{date_str} "
+        f"з {training['start_hour']:02d}:{training['start_min']:02d} "
+        f"до {training['end_hour']:02d}:{training['end_min']:02d}.\n"
+        f"Будь ласка, проголосуйте!"
+    )
+
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Так", callback_data=f"vote_yes_{vote_id}"),
+            InlineKeyboardButton("❌ Ні", callback_data=f"vote_no_{vote_id}")
+        ]
+    ])
+
+    for uid, info in users.items():
+        # Надсилаємо нагадування тільки тим, хто ще не проголосував
+        if (info.get("team") in [training.get("team"), "Both"]) and (uid not in voted_users):
+            try:
+                await app.bot.send_message(
+                    chat_id=int(uid),
+                    text=message,
+                    reply_markup=keyboard
+                )
+            except Exception as e:
+                print(f"❌ REMINDER: Помилка надсилання до {uid}: {e}")

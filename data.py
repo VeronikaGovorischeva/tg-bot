@@ -1,13 +1,12 @@
 import json
 
 
-def load_data(file, *args):
+def load_data(file_path, default=None):
     try:
-        with open(f"{file}", 'r',encoding='utf-8') as f:
+        with open(file_path, 'r', encoding='utf-8') as f:
             return json.load(f)
-    except FileNotFoundError:
-        return args[0] if args else {}
-
+    except (json.JSONDecodeError, FileNotFoundError):
+        return default if default is not None else {}
 
 def save_data(data, file):
     with open(file, 'w', encoding='utf-8') as f:
