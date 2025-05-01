@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import datetime
+import datetime
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
@@ -52,9 +52,8 @@ async def vote_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     team = user_data[user_id]["team"]
-    today = datetime.today().date()
-    current_hour = datetime.now().hour
-
+    today = datetime.datetime.today().date()
+    current_hour = datetime.datetime.now().hour
     trainings = get_next_week_trainings(team)
     filtered = []
 
@@ -64,39 +63,53 @@ async def vote_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if training["type"] == "one-time":
             try:
-                start_date = datetime.strptime(start_voting, "%d.%m.%Y").date()
-                end_date = datetime.strptime(end_voting, "%d.%m.%Y").date()
-            except:
+                if isinstance(start_voting, str):
+                    start_date = datetime.datetime.strptime(start_voting, "%d.%m.%Y").date()
+                else:
+                    start_date = start_voting
+
+                if isinstance(end_voting, str):
+                    end_date = datetime.datetime.strptime(end_voting, "%d.%m.%Y").date()
+                else:
+                    end_date = end_voting
+            except Exception:
                 continue
-            if start_date < today or (start_date == today and current_hour >= 18):
-                if today <= end_date:
-                    training_id = f"{training['date']}_{training['start_hour']:02d}:{training['start_min']:02d}"
-                    filtered.append((idx, training_id, training))
+
+            if (start_date < today or (start_date == today and current_hour >= 18)) and today <= end_date:
+                date_str = training["date"] if isinstance(training["date"], str) else training["date"].strftime(
+                    "%d.%m.%Y")
+                training_id = f"{date_str}_{training['start_hour']:02d}:{training['start_min']:02d}"
+                filtered.append((idx, training_id, training))
         else:
             if not isinstance(start_voting, int) or not isinstance(end_voting, int):
                 continue
             weekday_condition = (
-                    start_voting < today.weekday() or
-                    (start_voting == today.weekday() and current_hour >= 18)
+                start_voting < today.weekday() or
+                (start_voting == today.weekday() and current_hour >= 18)
             )
 
             if weekday_condition and today.weekday() <= end_voting:
-                training_id = f"const_{training['weekday']}_{training['start_hour']:02d}:{training['start_min']:02d}"
+                date_str = training['date'].strftime("%d.%m.%Y") if isinstance(training['date'], datetime.date) else training['date']
+                training_id = f"{date_str}_{training['start_hour']:02d}:{training['start_min']:02d}"
                 filtered.append((idx, training_id, training))
 
     if not filtered:
         await update.message.reply_text("Наразі немає тренувань для голосування.")
         return
 
-    keyboard = [
-        [InlineKeyboardButton(
-            f"{t['date'].strftime('%d.%m.%Y') if t['type'] == 'one-time' else WEEKDAYS[t['date'].weekday()]} {t['start_hour']:02d}:{t['start_min']:02d}",
-            callback_data=f"training_vote_{i}"
-        )] for i, tid, t in filtered
-    ]
+    keyboard = []
+    for i, tid, t in filtered:
+        if t["type"] == "one-time":
+            date_str = t["date"].strftime("%d.%m.%Y") if isinstance(t["date"], datetime.date) else t["date"]
+        else:
+            date_str = WEEKDAYS[t["date"].weekday()]
+        time_str = f"{t['start_hour']:02d}:{t['start_min']:02d}"
+        keyboard.append([InlineKeyboardButton(f"{date_str} {time_str}", callback_data=f"training_vote_{i}")])
+
     context.user_data["vote_options"] = filtered
 
     await update.message.reply_text("Оберіть тренування для голосування:", reply_markup=InlineKeyboardMarkup(keyboard))
+
 
 
 async def handle_training_vote_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -104,7 +117,9 @@ async def handle_training_vote_selection(update: Update, context: ContextTypes.D
     await query.answer()
 
     user_id = str(query.from_user.id)
-    training_id = query.data.replace("training_vote_", "")
+    idx = int(query.data.replace("training_vote_", ""))
+    _, training_id, _ = context.user_data["vote_options"][idx]
+
     # Не знаю чи потрібно
     # vote_options = context.user_data.get("vote_options")
     # if not vote_options:
