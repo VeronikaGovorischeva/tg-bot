@@ -5,7 +5,7 @@ import asyncio
 
 # from payments import *
 from trainings import create_training_add_handler, add_training, next_training, last_training, week_trainings
-from registration import create_registration_handler, start
+from registration import create_registration_handler
 from notifier import check_voting_and_notify,start_voting
 from voting import view_votes, vote_training, handle_vote, handle_training_vote_selection, handle_view_votes_selection
 
@@ -48,7 +48,6 @@ if __name__ == "__main__":
 
     # Registration
     app.add_handler(create_registration_handler())
-    app.add_handler(CommandHandler("start", start))
 
     # Add training(only for admins)
     app.add_handler(create_training_add_handler())
@@ -89,17 +88,10 @@ if __name__ == "__main__":
     # app.add_handler(CallbackQueryHandler(delete_game_callback, pattern=r"^delete_"))
     # app.add_handler(CallbackQueryHandler(list_games_callback, pattern=r"^list_"))
 
-    # scheduler = BackgroundScheduler()
-    # scheduler.add_job(lambda: asyncio.run(send_minutely_message(app)), 'cron', hour=12, minute=28)
-    # scheduler.start()
-
     scheduler = BackgroundScheduler()
-    scheduler.add_job(lambda: asyncio.run(start_voting(app)), 'cron', hour=17, minute=15)
+    scheduler.add_job(lambda: asyncio.run(start_voting(app)), 'cron', hour=18, minute=28)
     scheduler.add_job(lambda: asyncio.run(check_voting_and_notify(app)), 'cron', hour=17, minute=20)
     scheduler.start()
 
     app.add_error_handler(error)
     app.run_polling(poll_interval=0.1)
-    # import asyncio
-    # from notifier import schedule_notifications, check_time
-    # app.job_queue.run_once(lambda c: asyncio.create_task(schedule_notifications(app)), 0)

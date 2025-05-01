@@ -12,6 +12,18 @@ WEEKDAYS = ['понеділок', 'вівторок', 'середу', 'четв�
 VOTES_LIMIT = 14
 
 
+def generate_training_id(training, training_type):
+    """
+    Генерує унікальний ідентифікатор для тренування
+    Формат для разових тренувань: DD.MM.YYYY_HH:MM
+    Формат для постійних тренувань: const_WEEKDAY_HH:MM
+    """
+    if training_type == "one-time":
+        return f"{training['date']}_{training['start_hour']:02d}:{training['start_min']:02d}"
+    else:
+        return f"const_{training['weekday']}_{training['start_hour']:02d}:{training['start_min']:02d}"
+
+
 async def start_voting(app: Application):
     users = load_data(REGISTRATION_FILE)
     today = datetime.today().date()
@@ -47,11 +59,11 @@ async def check_voting_and_notify(app: Application):
 
 
 async def open_training_voting(app, training, training_id, users, training_type):
+    vote_id = generate_training_id(training, training_type)
+
     if training_type == "one-time":
-        vote_id = f"{training['date']}_{training['start_hour']:02d}:{training['start_min']:02d}"
         date_str = training['date']
     else:
-        vote_id = f"const_{training['weekday']}_{training['start_hour']:02d}:{training['start_min']:02d}"
         date_str = WEEKDAYS[training['weekday']]
 
     message = (
@@ -69,7 +81,7 @@ async def open_training_voting(app, training, training_id, users, training_type)
     ])
 
     for uid, info in users.items():
-        if info.get("team") in [training.get("team"), "Both"]:
+        if training.get("team") in [info.get("team"), "Both"]:
             try:
                 await app.bot.send_message(
                     chat_id=int(uid),
@@ -84,11 +96,11 @@ async def send_voting_reminder(app, training, training_id, users, votes_data, tr
     """
     Надсилає нагадування про голосування тим, хто ще не проголосував
     """
+    vote_id = generate_training_id(training, training_type)
+
     if training_type == "one-time":
-        vote_id = f"{training['date']}_{training['start_hour']:02d}:{training['start_min']:02d}"
         date_str = training['date']
     else:
-        vote_id = f"const_{training['weekday']}_{training['start_hour']:02d}:{training['start_min']:02d}"
         date_str = WEEKDAYS[training['weekday']]
 
     votes = votes_data.get("votes", {}).get(vote_id, {})
@@ -109,10 +121,10 @@ async def send_voting_reminder(app, training, training_id, users, votes_data, tr
             InlineKeyboardButton("❌ Ні", callback_data=f"vote_no_{vote_id}")
         ]
     ])
-
+    training_team = training.get("team")
     for uid, info in users.items():
         # Надсилаємо нагадування тільки тим, хто ще не проголосував
-        if (info.get("team") in [training.get("team"), "Both"]) and (uid not in voted_users):
+        if (training_team in [info.get("team"), "Both"]) and (uid not in voted_users):
             try:
                 await app.bot.send_message(
                     chat_id=int(uid),

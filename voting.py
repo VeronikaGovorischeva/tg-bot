@@ -35,6 +35,14 @@ def save_votes(votes):
     save_data(votes, VOTES_FILE)
 
 
+def generate_training_id(training):
+    """Generate a consistent training ID for both vote_training command and notifier"""
+    if training["type"] == "one-time":
+        return f"{training['date']}_{training['start_hour']:02d}:{training['start_min']:02d}"
+    else:
+        return f"const_{training['weekday']}_{training['start_hour']:02d}:{training['start_min']:02d}"
+
+
 async def vote_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
     user_data = load_data(REGISTRATION_FILE)
@@ -225,7 +233,8 @@ def is_vote_active(vote_id, today):
     # Наразі просто повертаємо True, щоб показати всі голосування
     return True
 
-#maybe change a bit
+
+# maybe change a bit
 def format_training_id(tid: str) -> str:
     if tid.startswith("Понеділок") or tid.startswith("const_"):
         try:
@@ -264,7 +273,7 @@ async def handle_view_votes_selection(update: Update, context: ContextTypes.DEFA
 
     label = format_training_id(training_id)
 
-    #Кількість людей можливо
+    # Кількість людей можливо
     message = f"📅 Тренування: {label}\n"
     message += "Буде:\n" + ("\n".join(yes_list) if yes_list else "Ніхто") + "\n"
     message += "Не буде:\n" + ("\n".join(no_list) if no_list else "Ніхто") + "\n"
