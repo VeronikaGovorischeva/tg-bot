@@ -3,10 +3,11 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from telegram import Update
 import asyncio
 
-# from payments import *
+from payments import charge_all, handle_payment_confirmation, collect_debts, handle_debt_check, pay_debt, \
+    handle_pay_debt_selection, handle_pay_debt_confirmation
 from trainings import create_training_add_handler, add_training, next_training, last_training, week_trainings
 from registration import create_registration_handler
-from notifier import check_voting_and_notify,start_voting
+from notifier import check_voting_and_notify, start_voting
 from voting import view_votes, vote_training, handle_vote, handle_training_vote_selection, handle_view_votes_selection
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -72,13 +73,13 @@ if __name__ == "__main__":
     app.add_handler(CallbackQueryHandler(handle_view_votes_selection, pattern=r"^view_votes_\d+"))
     app.add_handler(CallbackQueryHandler(handle_training_vote_selection, pattern=r"^training_vote_\d+"))
 
-    # app.add_handler(CommandHandler("charge_all", charge_all))
-    # app.add_handler(CallbackQueryHandler(handle_payment_confirmation, pattern=r"^paid_(yes|no)_\d+"))
-    # app.add_handler(CommandHandler("collect_debts", collect_debts))
-    # app.add_handler(CallbackQueryHandler(handle_debt_check, pattern=r"^debt_check_\d+"))
-    # app.add_handler(CommandHandler("pay_debt", pay_debt))
-    # app.add_handler(CallbackQueryHandler(handle_pay_debt_selection, pattern=r"^paydebt_select_\d+$"))
-    # app.add_handler(CallbackQueryHandler(handle_pay_debt_confirmation, pattern=r"^paydebt_confirm_(yes|no)$"))
+    app.add_handler(CommandHandler("charge_all", charge_all))
+    app.add_handler(CallbackQueryHandler(handle_payment_confirmation, pattern=r"^paid_(yes|no)_\d+"))
+    app.add_handler(CommandHandler("collect_debts", collect_debts))
+    app.add_handler(CallbackQueryHandler(handle_debt_check, pattern=r"^debt_check_\d+"))
+    app.add_handler(CommandHandler("pay_debt", pay_debt))
+    app.add_handler(CallbackQueryHandler(handle_pay_debt_selection, pattern=r"^paydebt_select_\d+$"))
+    app.add_handler(CallbackQueryHandler(handle_pay_debt_confirmation, pattern=r"^paydebt_confirm_(yes|no)$"))
 
     # app.add_handler(CommandHandler("next_game", next_game))
     # app.add_handler(CommandHandler("check_debt", check_debt))
