@@ -9,6 +9,8 @@ from trainings import create_training_add_handler, add_training, next_training, 
 from registration import create_registration_handler
 from notifier import check_voting_and_notify, start_voting
 from voting import view_votes, vote_training, handle_vote, handle_training_vote_selection, handle_view_votes_selection
+from commands import send_message_command, handle_send_message_team_selection, handle_send_message_input
+
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -72,6 +74,9 @@ if __name__ == "__main__":
     app.add_handler(CallbackQueryHandler(handle_vote, pattern=r"^vote_(yes|no)_"))
     app.add_handler(CallbackQueryHandler(handle_view_votes_selection, pattern=r"^view_votes_\d+"))
     app.add_handler(CallbackQueryHandler(handle_training_vote_selection, pattern=r"^training_vote_\d+"))
+    app.add_handler(CommandHandler("send_message", send_message_command))
+    app.add_handler(CallbackQueryHandler(handle_send_message_team_selection, pattern=r"^send_team_"))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_send_message_input))
 
     app.add_handler(CommandHandler("charge_all", charge_all))
     app.add_handler(CallbackQueryHandler(handle_payment_confirmation, pattern=r"^paid_(yes|no)_\d+"))
@@ -90,8 +95,9 @@ if __name__ == "__main__":
     # app.add_handler(CallbackQueryHandler(list_games_callback, pattern=r"^list_"))
 
     scheduler = BackgroundScheduler()
-    scheduler.add_job(lambda: asyncio.run(start_voting(app)), 'cron', hour=18, minute=28)
-    scheduler.add_job(lambda: asyncio.run(check_voting_and_notify(app)), 'cron', hour=17, minute=20)
+    loop = asyncio.get_event_loop()
+    scheduler.add_job(lambda: loop.call_soon_threadsafe(lambda: asyncio.create_task(start_voting(app))), 'cron', hour=20, minute=1)
+    scheduler.add_job(lambda: loop.call_soon_threadsafe(lambda: asyncio.create_task(check_voting_and_notify(app))),'cron', hour=17, minute=20)
     scheduler.start()
 
     app.add_error_handler(error)
