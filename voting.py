@@ -9,41 +9,55 @@ from trainings import get_next_week_trainings
 
 WEEKDAYS = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"]
 
-REGISTRATION_FILE = "data/user_data.json"
-VOTES_FILE = "data/training_votes.json"
+# File paths for Google Drive storage
+REGISTRATION_FILE = "user_data.json"
+VOTES_FILE = "training_votes.json"
 DEFAULT_VOTES_STRUCTURE = {"votes": {}}
 VOTES_LIMIT = 14
 
 
 def load_votes():
-    if not os.path.exists(VOTES_FILE):
-        with open(VOTES_FILE, "w", encoding="utf-8") as f:
-            json.dump(DEFAULT_VOTES_STRUCTURE, f, indent=4, ensure_ascii=False)
-
-    try:
-        with open(VOTES_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            if not isinstance(data, dict) or "votes" not in data:
-                raise ValueError("Invalid JSON structure")
-            return data
-    except (json.JSONDecodeError, ValueError):
-        save_data(DEFAULT_VOTES_STRUCTURE, VOTES_FILE)
-        return DEFAULT_VOTES_STRUCTURE
+    """
+    Load votes from Google Drive storage.
+    Returns a dictionary with votes data or default structure if none exists.
+    """
+    votes_data = load_data(VOTES_FILE, DEFAULT_VOTES_STRUCTURE)
+    if not isinstance(votes_data, dict) or "votes" not in votes_data:
+        # If the data format is incorrect, reset to default
+        votes_data = DEFAULT_VOTES_STRUCTURE
+        save_votes(votes_data)
+    return votes_data
 
 
 def save_votes(votes):
+    """
+    Save votes to Google Drive storage.
+    """
     save_data(votes, VOTES_FILE)
 
 
 def generate_training_id(training):
-    """Generate a consistent training ID for both vote_training command and notifier"""
+    """
+    Generate a consistent training ID for both vote_training command and notifier
+
+    Args:
+        training (dict): Training data dictionary
+
+    Returns:
+        str: Unique identifier for the training
+    """
     if training["type"] == "one-time":
-        return f"{training['date']}_{training['start_hour']:02d}:{training['start_min']:02d}"
+        date_str = training["date"] if isinstance(training["date"], str) else training["date"].strftime("%d.%m.%Y")
+        return f"{date_str}_{training['start_hour']:02d}:{training['start_min']:02d}"
     else:
         return f"const_{training['weekday']}_{training['start_hour']:02d}:{training['start_min']:02d}"
 
 
 async def vote_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handles the /vote_training command.
+    Shows a list of available trainings for voting.
+    """
     user_id = str(update.message.from_user.id)
     user_data = load_data(REGISTRATION_FILE)
 
@@ -76,21 +90,19 @@ async def vote_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 continue
 
             if (start_date < today or (start_date == today and current_hour >= 18)) and today <= end_date:
-                date_str = training["date"] if isinstance(training["date"], str) else training["date"].strftime(
-                    "%d.%m.%Y")
-                training_id = f"{date_str}_{training['start_hour']:02d}:{training['start_min']:02d}"
+                training_id = generate_training_id(training)
                 filtered.append((idx, training_id, training))
         else:
             if not isinstance(start_voting, int) or not isinstance(end_voting, int):
                 continue
+
             weekday_condition = (
-                start_voting < today.weekday() or
-                (start_voting == today.weekday() and current_hour >= 18)
+                    start_voting < today.weekday() or
+                    (start_voting == today.weekday() and current_hour >= 18)
             )
 
             if weekday_condition and today.weekday() <= end_voting:
-                date_str = training['date'].strftime("%d.%m.%Y") if isinstance(training['date'], datetime.date) else training['date']
-                training_id = f"{date_str}_{training['start_hour']:02d}:{training['start_min']:02d}"
+                training_id = generate_training_id(training)
                 filtered.append((idx, training_id, training))
 
     if not filtered:
@@ -111,26 +123,22 @@ async def vote_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Оберіть тренування для голосування:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 
-
 async def handle_training_vote_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handles the selection of a training for voting.
+    Shows the voting options (yes/no) for the selected training.
+    """
     query = update.callback_query
     await query.answer()
 
     user_id = str(query.from_user.id)
     idx = int(query.data.replace("training_vote_", ""))
-    _, training_id, _ = context.user_data["vote_options"][idx]
 
-    # Не знаю чи потрібно
-    # vote_options = context.user_data.get("vote_options")
-    # if not vote_options:
-    #     await query.edit_message_text("Помилка: не знайдено тренувань.")
-    #     return
-    # idx = int(query.data.replace("training_vote_", ""))
-    # try:
-    #     _, training_id, training = vote_options[idx]
-    # except IndexError:
-    #     await query.edit_message_text("Помилка: тренування не знайдено.")
-    #     return
+    try:
+        _, training_id, _ = context.user_data["vote_options"][idx]
+    except (KeyError, IndexError):
+        await query.edit_message_text("Помилка: тренування не знайдено.")
+        return
 
     votes = load_votes()
     if training_id in votes["votes"]:
@@ -160,6 +168,10 @@ async def handle_training_vote_selection(update: Update, context: ContextTypes.D
 
 
 async def handle_vote(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handles the vote (yes/no) for a training.
+    Updates the vote in the Google Drive storage.
+    """
     query = update.callback_query
     await query.answer()
 
@@ -175,26 +187,27 @@ async def handle_vote(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if training_id not in votes["votes"]:
         votes["votes"][training_id] = {}
+
     current_yes_votes = sum(1 for v in votes["votes"][training_id].values() if v["vote"] == "yes")
 
-    # Перевіряємо чи не змінюємо голос з "ні" на "так" коли ліміт досягнуто
+    # Check if changing vote from "no" to "yes" when limit reached
     changing_to_yes = (
             vote == "yes" and
             user_id in votes["votes"][training_id] and
             votes["votes"][training_id][user_id]["vote"] == "no"
     )
 
-    # Якщо вже 14 людей проголосували "так" і новий голос "так", попереджаємо
+    # If already 14 people voted "yes" and new vote is "yes", show warning
     if vote == "yes" and current_yes_votes >= VOTES_LIMIT and (
             user_id not in votes["votes"][training_id] or changing_to_yes):
         await query.edit_message_text("⚠️ Досягнуто максимум голосів 'так'. Ви не можете проголосувати.")
         return
 
-    # Оновлюємо голос користувача
+    # Update user's vote
     votes["votes"][training_id][user_id] = {"name": user_name, "vote": vote}
     save_votes(votes)
 
-    # Перевіряємо, чи досягнуто ліміт після оновлення
+    # Check if limit reached after update
     updated_yes_votes = sum(1 for v in votes["votes"][training_id].values() if v["vote"] == "yes")
 
     message = f"Ваш голос: {'✅' if vote == 'yes' else '❌'} записано!"
@@ -206,12 +219,16 @@ async def handle_vote(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def view_votes(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handles the /view_votes command.
+    Shows a list of trainings with active voting.
+    """
     votes = load_votes()
     if not votes["votes"]:
         await update.message.reply_text("Ще ніхто не голосував.")
         return
 
-    today = datetime.today().date()
+    today = datetime.datetime.today().date()
     active_votes = {}
 
     for vote_id in votes["votes"].keys():
@@ -242,23 +259,35 @@ async def view_votes(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def is_vote_active(vote_id, today):
     """
-    Перевіряє чи голосування активне зараз
+    Checks if a vote is currently active.
+
+    Args:
+        vote_id (str): Training ID
+        today (datetime.date): Current date
+
+    Returns:
+        bool: True if the vote is active, False otherwise
     """
-    # Ця функція має бути реалізована відповідно до логіки вашого додатку
-    # Наразі просто повертаємо True, щоб показати всі голосування
+    # Always return True for simplicity - could be extended to check date ranges
     return True
 
 
-# maybe change a bit
 def format_training_id(tid: str) -> str:
-    if tid.startswith("Понеділок") or tid.startswith("const_"):
+    """
+    Formats a training ID for display.
+
+    Args:
+        tid (str): Training ID
+
+    Returns:
+        str: Formatted training description
+    """
+    if tid.startswith("const_"):
         try:
-            if tid.startswith("const_"):
-                parts = tid.split("_")
-                weekday_index = int(parts[1])
-                time_str = parts[2]
-                return f"{WEEKDAYS[weekday_index]} о {time_str} (регулярне)"
-            return tid
+            parts = tid.split("_")
+            weekday_index = int(parts[1])
+            time_str = parts[2]
+            return f"{WEEKDAYS[weekday_index]} о {time_str} (регулярне)"
         except:
             return tid
     else:
@@ -269,6 +298,10 @@ def format_training_id(tid: str) -> str:
 
 
 async def handle_view_votes_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handles the selection of a training for viewing votes.
+    Shows the list of users who voted yes/no for the selected training.
+    """
     query = update.callback_query
     await query.answer()
 
@@ -288,7 +321,6 @@ async def handle_view_votes_selection(update: Update, context: ContextTypes.DEFA
 
     label = format_training_id(training_id)
 
-    # Кількість людей можливо
     message = f"📅 Тренування: {label}\n"
     message += "Буде:\n" + ("\n".join(yes_list) if yes_list else "Ніхто") + "\n"
     message += "Не буде:\n" + ("\n".join(no_list) if no_list else "Ніхто") + "\n"

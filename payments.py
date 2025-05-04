@@ -5,9 +5,9 @@ from trainings import get_last_training
 from voting import load_votes
 from datetime import datetime, timedelta
 
-DATA_FILE = "data/user_data.json"
-PAYMENTS_FILE = "data/payments.json"
-DEBTS_FILE = "data/debts.json"
+DATA_FILE = "user_data.json"
+PAYMENTS_FILE = "payments.json"
+DEBTS_FILE = "debts.json"
 
 TRAINING_COST = 1750
 CARD_NUMBER = "5375 4141 0273 8014"
@@ -48,8 +48,8 @@ async def charge_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await update.message.reply_text("Немає останнього тренування для нарахування.")
         return
 
-    one_time_trainings = load_data("data/one_time_trainings.json", {})
-    constant_trainings = load_data("data/constant_trainings.json", {})
+    one_time_trainings = load_data("one_time_trainings.json", {})
+    constant_trainings = load_data("constant_trainings.json", {})
 
     training_key = None
     training = None

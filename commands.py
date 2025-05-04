@@ -32,7 +32,7 @@ async def handle_send_message_input(update: Update, context: ContextTypes.DEFAUL
 
     team = SEND_MESSAGE_STATE.pop(user_id)
     message_text = update.message.text
-    users = load_data("data/user_data.json")
+    users = load_data("user_data.json")
 
     count = 0
     for uid, info in users.items():

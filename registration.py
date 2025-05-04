@@ -379,7 +379,7 @@ def create_registration_handler() -> ConversationHandler:
         ConversationHandler: The handler configured with the workflow
         for user registration, entry points, states, and fallback commands.
     """
-    registration_manager = RegistrationManager("data/user_data.json")
+    registration_manager = RegistrationManager("user_data.json")
 
     return ConversationHandler(
         entry_points=[CommandHandler("start", registration_manager.handle_start)],
