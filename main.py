@@ -1,3 +1,5 @@
+import os
+
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, CallbackContext, \
     ContextTypes
 from telegram import Update
@@ -10,14 +12,14 @@ from registration import create_registration_handler
 from notifier import check_voting_and_notify, start_voting
 from voting import view_votes, vote_training, handle_vote, handle_training_vote_selection, handle_view_votes_selection
 from commands import send_message_command, handle_send_message_team_selection, handle_send_message_input
+from dotenv import load_dotenv
+load_dotenv()
 
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
-chillnttestbot_token = "7640419427:AAHUciixP3FyY6PLahICwer6ybFLwQRqucg"
-idontknownamesbot_token = "8010698609:AAGZhl3Cfqh_YRaV1u9ROm0xySNUgLIzIC0"
-megachillguybot_token = "8158067169:AAGQaLETvllC5HR4byyadJqQeEwsOQN0IyE"
 bot_username = "ChillNtTestBot"
+BOT_TOKEN = os.getenv("NEW_TOKEN")
 
 
 async def error(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -25,7 +27,7 @@ async def error(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 if __name__ == "__main__":
-    app = Application.builder().token(chillnttestbot_token).build()
+    app = Application.builder().token(BOT_TOKEN).build()
     # game_add_handler = ConversationHandler(
     #     entry_points=[CommandHandler('add_game', add_game_command)],
     #     states={
