@@ -52,7 +52,7 @@ class Messages:
     team selection, or cancellation processes. These messages are static and primarily
     intended for use in user interface or bot interactions.
     """
-    WELCOME = "Привіт! Введи своє прізвище та ім'я АНГЛІЙСЬКОЮ"
+    WELCOME = "Привіт! Введи своє прізвище та ім'я українською"
     TEAM_SELECTION = "Дякую! Тепер обери свою команду:"
     REGISTRATION_COMPLETE = ("Реєстрацію завершено.\n"
                              "Використовуй команди /next_training для інформації про тренування "
