@@ -15,7 +15,6 @@ from commands import send_message_command, handle_send_message_team_selection, h
 from dotenv import load_dotenv
 load_dotenv()
 
-
 from apscheduler.schedulers.background import BackgroundScheduler
 
 bot_username = "ChillNtTestBot"
@@ -98,8 +97,8 @@ if __name__ == "__main__":
 
     scheduler = BackgroundScheduler()
     loop = asyncio.get_event_loop()
-    scheduler.add_job(lambda: loop.call_soon_threadsafe(lambda: asyncio.create_task(start_voting(app))), 'cron', hour=18, minute=0)
-    scheduler.add_job(lambda: loop.call_soon_threadsafe(lambda: asyncio.create_task(check_voting_and_notify(app))),'cron', hour=19, minute=0)
+    scheduler.add_job(lambda: loop.call_soon_threadsafe(lambda: asyncio.create_task(start_voting(app))), 'cron', hour=15, minute=0)
+    scheduler.add_job(lambda: loop.call_soon_threadsafe(lambda: asyncio.create_task(check_voting_and_notify(app))),'cron', hour=16, minute=0)
     scheduler.start()
 
     app.add_error_handler(error)
