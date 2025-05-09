@@ -1,11 +1,12 @@
-from enum import Enum, auto
 from typing import Dict, Optional
+from enum import Enum, auto
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, CallbackQueryHandler, \
     filters
-from dataclasses import dataclass
-from data import load_data, save_data
+
+from user_repository import UserRepository
+from models import UserProfile, Team
 
 
 class RegistrationState(Enum):
@@ -24,25 +25,6 @@ class RegistrationState(Enum):
     TEAM = auto()
 
 
-class Team(Enum):
-    """
-    Enumeration representing possible team categories.
-
-    This enumeration defines two categories for teams, 'Male' and 'Female',
-    which can be used to classify or differentiate between different teams
-    based on gender.
-
-    Attributes
-    ----------
-    MALE : str
-        Represents the 'Male' team category.
-    FEMALE : str
-        Represents the 'Female' team category.
-    """
-    MALE = "Male"
-    FEMALE = "Female"
-
-
 class Messages:
     """
     Represents a collection of messages used for user interaction.
@@ -58,48 +40,6 @@ class Messages:
                              "Використовуй команди /next_training для інформації про тренування "
                              "та /next_game для інформації про ігри.")
     REGISTRATION_CANCELLED = "Реєстрація скасована. Використовуй /start щоб спробувати знову."
-
-
-@dataclass
-class UserProfile:
-    """
-    Represents a user profile with details related to their Telegram account and additional attributes.
-
-    The UserProfile class encapsulates user information such as Telegram ID, username, associated name,
-    team membership, and debt list. This structure is particularly useful in applications where user
-    details need to be managed or serialized.
-
-    Attributes:
-        telegram_id (str): The unique Telegram ID for the user.
-        telegram_username (Optional[str]): The Telegram username of the user. Can be None.
-        name (Optional[str]): The name of the user. Can be None.
-        team (Optional[Team]): The team the user belongs to. Can be None.
-        debt (list[int]): A list representing the user's debt or financial status. Defaults to None.
-
-    Methods:
-        is_registered:
-            Determines if the user profile is considered registered. It checks whether the 'name' and 'team'
-            attributes are present.
-
-        to_dict:
-            Converts the user profile into a dictionary format suitable for serialization or storage.
-    """
-    telegram_id: str
-    telegram_username: Optional[str]
-    name: Optional[str] = None
-    team: Optional[Team] = None
-    debt: list[int] = None
-
-    def is_registered(self) -> bool:
-        return all([self.name, self.team])
-
-    def to_dict(self) -> Dict:
-        return {
-            "telegram_username": self.telegram_username,
-            "name": self.name,
-            "team": self.team.value if self.team else None,
-            "debt": self.debt or [0]
-        }
 
 
 class MessageHandlers:
@@ -190,52 +130,41 @@ class RegistrationManager:
         commands = [f"/{cmd}" for cmd in self.commands.keys()]
         return f"Використовуй команди {' '.join(commands)} щоб дізнатися інфу про наступне тренування та наступну гру."
 
-    def load_user_profile(self, user_id: str) -> Optional[UserProfile]:
+    @staticmethod
+    def load_user_profile(user_id: int) -> Optional[UserProfile]:
         """
-        Loads a user profile based on the provided user ID.
+        Loads a user profile by the given user ID.
 
-        This method retrieves user data from the registration file and returns a
-        UserProfile object if the user is found. If the user does not exist in
-        the data, it returns None. The method also manages optional fields such as
-        the user's team and debt information.
+        This method retrieves the user profile from the repository using the provided
+        user ID. If no user profile is found associated with the given ID, the method
+        returns None.
 
-        Arguments:
-            user_id (str): The unique identifier of the user whose profile
-                needs to be loaded.
+        Parameters:
+        user_id: str
+            The unique identifier for the user, typically a Telegram ID.
 
         Returns:
-            Optional[UserProfile]: A UserProfile object containing the user's
-            information if the user exists in the registration file, otherwise None.
+        Optional[UserProfile]
+            The user profile object if found, or None if no profile is associated
+            with the provided user ID.
         """
-        user_data = load_data(self.registration_file)
-        if user_id in user_data:
-            data = user_data[user_id]
-            team = Team(data.get("team")) if data.get("team") else None
-            return UserProfile(
-                telegram_id=user_id,
-                telegram_username=data.get("telegram_username"),
-                name=data.get("name"),
-                team=team,
-                debt=data.get("debt", [0])
-            )
-        return None
+        return UserRepository.get_by_telegram_id(user_id)
 
-    def save_user_profile(self, profile: UserProfile) -> None:
+    @staticmethod
+    def save_user_profile(profile: UserProfile) -> None:
         """
-        Save the user profile to the registration file.
+        Saves a user profile into the repository.
 
-        This method loads user data from a file, updates the data
-        with the given user profile, and then saves the updated
-        data back to the file. It ensures that a user's profile is
-        stored and managed within the registration system.
+        This method allows saving user profile data to the repository for
+        persistent storage.
 
         Args:
             profile (UserProfile): The user profile to be saved.
 
+        Returns:
+            None
         """
-        user_data = load_data(self.registration_file)
-        user_data[profile.telegram_id] = profile.to_dict()
-        save_data(user_data, self.registration_file)
+        UserRepository.save(profile)
 
     async def handle_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """
@@ -256,14 +185,14 @@ class RegistrationManager:
                 if the user is not registered.
         """
         user = update.message.from_user
-        profile = self.load_user_profile(str(user.id))
+        profile = self.load_user_profile(user.id)
 
         if profile and profile.is_registered():
             await update.message.reply_text(self._get_commands_message())
             return ConversationHandler.END
 
         profile = UserProfile(
-            telegram_id=str(user.id),
+            telegram_id=user.id,
             telegram_username=user.username
         )
         self.save_user_profile(profile)
@@ -294,7 +223,7 @@ class RegistrationManager:
         ------
         None
         """
-        user_id = str(update.message.from_user.id)
+        user_id = update.message.from_user.id
         profile = self.load_user_profile(user_id)
 
         if not profile:
@@ -330,7 +259,7 @@ class RegistrationManager:
         query = update.callback_query
         await query.answer()
 
-        user_id = str(query.from_user.id)
+        user_id = query.from_user.id
         profile = self.load_user_profile(user_id)
 
         if not profile:
