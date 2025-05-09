@@ -7,7 +7,7 @@ import datetime
 from data import load_data, save_data
 from validation import is_authorized
 
-DATA_FILE="data/user_data.json"
+DATA_FILE="users"
 class TrainingType(Enum):
     ONE_TIME = "training_onetime"
     RECURRING = "training_recurring"
@@ -31,8 +31,8 @@ class VotingType(Enum):
 TYPE, TEAM, COACH, DATE, START, END, WEEKDAY, START_VOTING, END_VOTING = range(9)
 
 # File paths
-ONE_TIME_TRAININGS_FILE = "data/one_time_trainings.json"
-CONSTANT_TRAININGS_FILE = "data/constant_trainings.json"
+ONE_TIME_TRAININGS_FILE = "one_time_trainings"
+CONSTANT_TRAININGS_FILE = "constant_trainings"
 
 # UI Text constants
 MESSAGES = {
@@ -487,7 +487,7 @@ async def week_trainings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(message)
 
 def format_next_training_message(user_id: str) -> str:
-    user_data = load_data("data/user_data.json")
+    user_data = load_data("users")
 
     if user_id not in user_data or "team" not in user_data[user_id]:
         return "Будь ласка, завершіть реєстрацію, щоб отримувати інформацію про тренування."

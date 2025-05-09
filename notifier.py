@@ -4,10 +4,10 @@ from data import load_data
 from telegram.ext import Application
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-REGISTRATION_FILE = "data/user_data.json"
-ONE_TIME_TRAININGS_FILE = "data/one_time_trainings.json"
-CONSTANT_TRAININGS_FILE = "data/constant_trainings.json"
-VOTES_FILE = "data/training_votes.json"
+REGISTRATION_FILE = "users"
+ONE_TIME_TRAININGS_FILE = "one_time_trainings"
+CONSTANT_TRAININGS_FILE = "constant_trainings"
+VOTES_FILE = "training_votes"
 WEEKDAYS = ['понеділок', 'вівторок', 'середу', 'четвер', "п'ятницю", 'суботу', 'неділю']
 VOTES_LIMIT = 14
 

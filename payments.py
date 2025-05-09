@@ -2,54 +2,55 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from data import load_data, save_data
 from trainings import get_last_training
-from voting import load_votes
 from datetime import datetime, timedelta
 
-DATA_FILE = "data/user_data.json"
-PAYMENTS_FILE = "data/payments.json"
-DEBTS_FILE = "data/debts.json"
+DATA_FILE = "users"
+PAYMENTS_FILE = "payments"
+DEBTS_FILE = "debts"
 
 TRAINING_COST = 1750
 CARD_NUMBER = "5375 4141 0273 8014"
 
 
 def load_debts():
-    data = load_data(DEBTS_FILE, [])
-    if not isinstance(data, list):
-        data = []
-    return data
+    data = load_data('debts', default=[])
+    if isinstance(data, dict) and data:
+        return list(data.values())
+    return []
 
 
 def save_debt(debt):
-    data = load_debts()
-    data.append(debt)
-    save_data(data, DEBTS_FILE)
+    debts = load_debts()
+    debts.append(debt)
+    debts_dict = {str(i): debt for i, debt in enumerate(debts)}
+    save_data(debts_dict, 'debts')
 
 
 def load_payments():
-    data = load_data(PAYMENTS_FILE, [])
-    if not isinstance(data, list):
-        data = []
-    return data
+    data = load_data('payments', default=[])
+    if isinstance(data, dict) and data:
+        return list(data.values())
+    return []
 
 
 def save_payment(payment):
-    data = load_payments()
-    data.append(payment)
-    save_data(data, PAYMENTS_FILE)
+    payments = load_payments()
+    payments.append(payment)
+    payments_dict = {str(i): payment for i, payment in enumerate(payments)}
+    save_data(payments_dict, 'payments')
 
 
 async def charge_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_data = load_data(DATA_FILE)
-    votes = load_votes()["votes"]
+    votes = load_data('votes')["votes"]
     date_str, training_id = get_last_training()
 
     if not training_id:
         await update.message.reply_text("Немає останнього тренування для нарахування.")
         return
 
-    one_time_trainings = load_data("data/one_time_trainings.json", {})
-    constant_trainings = load_data("data/constant_trainings.json", {})
+    one_time_trainings = load_data("one_time_trainings", {})
+    constant_trainings = load_data("constant_trainings", {})
 
     training_key = None
     training = None
@@ -147,7 +148,7 @@ async def handle_payment_confirmation(update: Update, context: ContextTypes.DEFA
 
 
 async def collect_debts(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    votes = load_votes()["votes"]
+    votes = load_data('votes')["votes"]
 
     two_weeks_ago = datetime.today().date() - timedelta(days=14)
     options = []
@@ -194,7 +195,7 @@ async def handle_debt_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     training_id, date_obj, time_str = options[idx]
     training_datetime = f"{date_obj.strftime('%d.%m.%Y')} {time_str}"
 
-    votes = load_votes()["votes"].get(training_id, {})
+    votes = load_data('votes')["votes"].get(training_id, {})
     payments = load_payments()
     paid_ids = {p["user_id"] for p in payments if p["training_id"] == training_id}
 

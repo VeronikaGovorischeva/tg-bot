@@ -1,6 +1,7 @@
 import json
 import os
 import datetime
+from pymongo import MongoClient
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
@@ -9,30 +10,10 @@ from trainings import get_next_week_trainings
 
 WEEKDAYS = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"]
 
-REGISTRATION_FILE = "data/user_data.json"
-VOTES_FILE = "data/training_votes.json"
+REGISTRATION_FILE = "users"
+VOTES_FILE = "training_votes"
 DEFAULT_VOTES_STRUCTURE = {"votes": {}}
 VOTES_LIMIT = 14
-
-
-def load_votes():
-    if not os.path.exists(VOTES_FILE):
-        with open(VOTES_FILE, "w", encoding="utf-8") as f:
-            json.dump(DEFAULT_VOTES_STRUCTURE, f, indent=4, ensure_ascii=False)
-
-    try:
-        with open(VOTES_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            if not isinstance(data, dict) or "votes" not in data:
-                raise ValueError("Invalid JSON structure")
-            return data
-    except (json.JSONDecodeError, ValueError):
-        save_data(DEFAULT_VOTES_STRUCTURE, VOTES_FILE)
-        return DEFAULT_VOTES_STRUCTURE
-
-
-def save_votes(votes):
-    save_data(votes, VOTES_FILE)
 
 
 def generate_training_id(training):
@@ -84,12 +65,13 @@ async def vote_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not isinstance(start_voting, int) or not isinstance(end_voting, int):
                 continue
             weekday_condition = (
-                start_voting < today.weekday() or
-                (start_voting == today.weekday() and current_hour >= 18)
+                    start_voting < today.weekday() or
+                    (start_voting == today.weekday() and current_hour >= 18)
             )
 
             if weekday_condition and today.weekday() <= end_voting:
-                date_str = training['date'].strftime("%d.%m.%Y") if isinstance(training['date'], datetime.date) else training['date']
+                date_str = training['date'].strftime("%d.%m.%Y") if isinstance(training['date'], datetime.date) else \
+                    training['date']
                 training_id = f"{date_str}_{training['start_hour']:02d}:{training['start_min']:02d}"
                 filtered.append((idx, training_id, training))
 
@@ -109,7 +91,6 @@ async def vote_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["vote_options"] = filtered
 
     await update.message.reply_text("Оберіть тренування для голосування:", reply_markup=InlineKeyboardMarkup(keyboard))
-
 
 
 async def handle_training_vote_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -132,7 +113,7 @@ async def handle_training_vote_selection(update: Update, context: ContextTypes.D
     #     await query.edit_message_text("Помилка: тренування не знайдено.")
     #     return
 
-    votes = load_votes()
+    votes = load_data('votes', DEFAULT_VOTES_STRUCTURE)
     if training_id in votes["votes"]:
         yes_votes = sum(1 for v in votes["votes"][training_id].values() if v["vote"] == "yes")
         if yes_votes >= VOTES_LIMIT:
@@ -171,7 +152,7 @@ async def handle_vote(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data = load_data(REGISTRATION_FILE)
     user_name = user_data.get(user_id, {}).get("name", "Невідомий користувач")
 
-    votes = load_votes()
+    votes = load_data('votes', DEFAULT_VOTES_STRUCTURE)
 
     if training_id not in votes["votes"]:
         votes["votes"][training_id] = {}
@@ -192,7 +173,7 @@ async def handle_vote(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Оновлюємо голос користувача
     votes["votes"][training_id][user_id] = {"name": user_name, "vote": vote}
-    save_votes(votes)
+    save_data(votes, 'votes')
 
     # Перевіряємо, чи досягнуто ліміт після оновлення
     updated_yes_votes = sum(1 for v in votes["votes"][training_id].values() if v["vote"] == "yes")
@@ -206,12 +187,12 @@ async def handle_vote(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def view_votes(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    votes = load_votes()
+    votes = load_data('votes', DEFAULT_VOTES_STRUCTURE)
     if not votes["votes"]:
         await update.message.reply_text("Ще ніхто не голосував.")
         return
 
-    today = datetime.today().date()
+    today = datetime.datetime.today().date()
     active_votes = {}
 
     for vote_id in votes["votes"].keys():
@@ -280,7 +261,7 @@ async def handle_view_votes_selection(update: Update, context: ContextTypes.DEFA
         return
 
     training_id = vote_keys[idx]
-    votes = load_votes()
+    votes = load_data('votes', DEFAULT_VOTES_STRUCTURE)
     voters = votes["votes"].get(training_id, {})
 
     yes_list = [v["name"] for v in voters.values() if v["vote"] == "yes"]
