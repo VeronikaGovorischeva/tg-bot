@@ -12,7 +12,7 @@ async def send_message_command(update: Update, context: ContextTypes.DEFAULT_TYP
         ],
         [InlineKeyboardButton("Обидві команди", callback_data="send_team_Both")]
     ])
-    await update.message.reply_text("Оберіть команду, якій хочете надіслати повідомлення:", reply_markup=keyboard)
+    await update.message.reply_text("Оберіть команду пахъаххахахахахахах, якій хочете надіслати повідомлення:", reply_markup=keyboard)
 
 
 async def handle_send_message_team_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
