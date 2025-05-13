@@ -1,0 +1,38 @@
+const UserSchema = {
+  _id: ObjectId,         // MongoDB automatically generated ID
+  telegram_id: Number,   // Unique Telegram user ID
+  telegram_username: String,  // Telegram username (@username)
+  display_name: String,  // User's displayed name
+  team: String,          // User's team
+  debt: Number,          // Current debt amount
+  debt_history: [        // Array of debt entries
+    {
+      training_id: ObjectId,  // Reference to the training
+      training_date: Date,    // Date of the training
+      amount: Number,         // Debt amount
+      payment_card: String,   // Payment card info
+      status: String          // Payment status (e.g., "paid", "pending", "overdue")
+    }
+  ]
+};
+
+// Trainings collection schema
+const TrainingSchema = {
+  _id: ObjectId,         // MongoDB automatically generated ID
+  regular: Boolean,      // Is this a regular training?
+  date: Date,            // Training date and time
+  day_of_week: Number,   // 0-6 (Sunday to Saturday)
+  start_time: {
+    hour: Number,        // 0-23
+    minute: Number       // 0-59
+  },
+  end_time: {
+    hour: Number,        // 0-23
+    minute: Number       // 0-59
+  },
+  team: String,          // Team name this training is for
+  coach: ObjectId,       // Reference to user who is coaching (optional)
+  voting_start: Date,    // When voting opens
+  voting_end: Date,      // When voting closes (nullable if open-ended)
+  votes: [ObjectId],     // Array of user IDs who voted
+};

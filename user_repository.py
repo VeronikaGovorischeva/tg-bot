@@ -3,7 +3,7 @@ from typing import Optional
 from models import UserProfile, Team
 
 client = MongoClient("mongodb://localhost:27017/")
-db = client['TestBot']  # Change the name for better db
+db = client['TelegramBot']
 users = db['users']
 
 
