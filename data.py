@@ -1,8 +1,11 @@
 from pymongo import MongoClient
 from typing import Any, Dict, Optional
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
-# MongoDB connection setup
-client = MongoClient('mongodb://localhost:27017/')
+mongo_uri = os.getenv("MONGO_URI")
+client = MongoClient(mongo_uri)
 db = client['TelegramBot']
 
 
