@@ -263,7 +263,8 @@ async def save_training_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "end_hour": context.user_data['end_hour'],
         "end_min": context.user_data['end_min'],
         "start_voting": context.user_data['start_voting'],
-        "end_voting": context.user_data['end_voting']
+        "end_voting": context.user_data['end_voting'],
+        "status": "not charged"
     }
 
     is_onetime = context.user_data['training_type'] == TrainingType.ONE_TIME.value

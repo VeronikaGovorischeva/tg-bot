@@ -41,57 +41,92 @@ def save_payment(payment):
 
 
 async def charge_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_data = load_data(DATA_FILE)
-    votes = load_data('votes')["votes"]
-    date_str, training_id = get_last_training()
-
-    if not training_id:
-        await update.message.reply_text("Немає останнього тренування для нарахування.")
-        return
-
     one_time_trainings = load_data("one_time_trainings", {})
     constant_trainings = load_data("constant_trainings", {})
 
-    training_key = None
-    training = None
+    options = []
 
-    if str(training_id) in one_time_trainings:
-        training = one_time_trainings[str(training_id)]
-        date = training["date"]
-        hour = training["start_hour"]
-        minute = training["start_min"]
-        training_key = f"{date}_{hour:02d}:{minute:02d}"
-    elif str(training_id) in constant_trainings:
-        training = constant_trainings[str(training_id)]
-        weekday = training["weekday"]
-        hour = training["start_hour"]
-        minute = training["start_min"]
-        training_key = f"const_{weekday}_{hour:02d}:{minute:02d}"
+    for tid, t in one_time_trainings.items():
+        if t.get("status") == "not charged":
+            date = t["date"]
+            time = f"{t['start_hour']:02d}:{t['start_min']:02d}"
+            label = f"{date} о {time}"
+            options.append((tid, "one_time", label))
 
-    if not training_key or training_key not in votes:
-        await update.message.reply_text("Ніхто не проголосував 'так' за останнє тренування.")
+    for tid, t in constant_trainings.items():
+        if t.get("status") == "not charged":
+            weekday = t["weekday"]
+            time = f"{t['start_hour']:02d}:{t['start_min']:02d}"
+            day = ["Понеділок","Вівторок","Середа","Четвер","П'ятниця","Субота","Неділя"][weekday]
+            label = f"{day} о {time}"
+            options.append((tid, "constant", label))
+
+    if not options:
+        await update.message.reply_text("Немає тренувань зі статусом 'not charged'.")
         return
 
-    voters = votes[training_key]
-    yes_voters = [uid for uid, v in voters.items() if v["vote"] == "yes"]
+    context.user_data["charge_options"] = options
 
+    keyboard = [
+        [InlineKeyboardButton(label, callback_data=f"charge_select_{i}")]
+        for i, (_, _, label) in enumerate(options)
+    ]
+
+    await update.message.reply_text(
+        "Оберіть тренування для нарахування платежів:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    idx = int(query.data.replace("charge_select_", ""))
+    options = context.user_data.get("charge_options", [])
+    if idx >= len(options):
+        await query.edit_message_text("Помилка: тренування не знайдено.")
+        return
+
+    tid, ttype, label = options[idx]
+
+    trainings = load_data("one_time_trainings" if ttype == "one_time" else "constant_trainings")
+    training = trainings.get(tid)
+    if not training:
+        await query.edit_message_text("Тренування не знайдено.")
+        return
+
+    votes = load_data("votes", {"votes": {}})["votes"]
+    training_id = (
+        f"{training['date']}_{training['start_hour']:02d}:{training['start_min']:02d}"
+        if ttype == "one_time"
+        else f"const_{training['weekday']}_{training['start_hour']:02d}:{training['start_min']:02d}"
+    )
+
+    if training_id not in votes:
+        await query.edit_message_text("Ніхто не голосував за це тренування.")
+        return
+
+    voters = votes[training_id]
+    yes_voters = [uid for uid, v in voters.items() if v["vote"] == "yes"]
     if not yes_voters:
-        await update.message.reply_text("Ніхто не проголосував 'так' за останнє тренування.")
+        await query.edit_message_text("Ніхто не проголосував 'так' за це тренування.")
         return
 
     per_person = round(TRAINING_COST / len(yes_voters)) if training.get("with_coach") else 0
     training_datetime = (
         f"{training['date']} {training['start_hour']:02d}:{training['start_min']:02d}"
-        if 'date' in training else f"{date_str} {hour:02d}:{minute:02d}"
+        if ttype == "one_time"
+        else f"{datetime.today().strftime('%d.%m.%Y')} {training['start_hour']:02d}:{training['start_min']:02d}"
     )
 
+    user_data = load_data("users")
+
     for uid in yes_voters:
-        uid_str = str(uid)
-        if uid_str not in user_data:
+        if str(uid) not in user_data:
             continue
 
-        context.bot_data[f"charge_{uid_str}"] = {
-            "training_id": training_key,
+        context.bot_data[f"charge_{uid}"] = {
+            "training_id": training_id,
             "amount": per_person,
             "training_datetime": training_datetime,
             "card": CARD_NUMBER
@@ -99,8 +134,8 @@ async def charge_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
         keyboard = [
             [
-                InlineKeyboardButton("✅ Я оплатив(ла)", callback_data=f"paid_yes_{uid_str}"),
-                InlineKeyboardButton("❌ Ще не оплатив(ла)", callback_data=f"paid_no_{uid_str}")
+                InlineKeyboardButton("✅ Я оплатив(ла)", callback_data=f"paid_yes_{uid}"),
+                InlineKeyboardButton("❌ Ще не оплатив(ла)", callback_data=f"paid_no_{uid}")
             ]
         ]
 
@@ -108,7 +143,7 @@ async def charge_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             await context.bot.send_message(
                 chat_id=int(uid),
                 text=(
-                    f"💳 Ти відвідав(-ла) останнє тренування {training_datetime}.\n"
+                    f"💳 Ти відвідав(-ла) тренування {training_datetime}.\n"
                     f"Сума до сплати: {per_person} грн\n"
                     f"Карта для оплати: {CARD_NUMBER}\n\n"
                     f"Натисни, якщо ти вже оплатив:"
@@ -118,7 +153,12 @@ async def charge_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         except Exception as e:
             print(f"❌ Помилка надсилання повідомлення для {uid}: {e}")
 
-    await update.message.reply_text("✅ Повідомлення з інструкцією надіслано всім, хто голосував 'так'.")
+    # Update training status
+    trainings[tid]["status"] = "charged"
+    save_data(trainings, "one_time_trainings" if ttype == "one_time" else "constant_trainings")
+
+    await query.edit_message_text("✅ Повідомлення з інструкцією надіслано всім, хто голосував 'так'.")
+
 
 
 async def handle_payment_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -148,68 +188,83 @@ async def handle_payment_confirmation(update: Update, context: ContextTypes.DEFA
 
 
 async def collect_debts(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    votes = load_data('votes')["votes"]
+    one_time_trainings = load_data("one_time_trainings", {})
+    constant_trainings = load_data("constant_trainings", {})
 
-    two_weeks_ago = datetime.today().date() - timedelta(days=14)
     options = []
 
-    for tid, training_votes in votes.items():
-        if tid.startswith("const_"):
-            continue  # optional: skip constant trainings if you want
+    for tid, t in one_time_trainings.items():
+        if t.get("status") == "charged":
+            date = t["date"]
+            time = f"{t['start_hour']:02d}:{t['start_min']:02d}"
+            options.append((tid, "one_time", f"{date} о {time}"))
 
-        try:
-            date_part, time_part = tid.split("_")
-            training_date = datetime.strptime(date_part, "%d.%m.%Y").date()
-            if training_date >= two_weeks_ago:
-                options.append((tid, training_date, time_part))
-        except:
-            continue
+    for tid, t in constant_trainings.items():
+        if t.get("status") == "charged":
+            weekday = t["weekday"]
+            time = f"{t['start_hour']:02d}:{t['start_min']:02d}"
+            day = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"][weekday]
+            options.append((tid, "constant", f"{day} о {time}"))
 
     if not options:
-        await update.message.reply_text("Немає тренувань за останні 2 тижні.")
+        await update.message.reply_text("Немає тренувань зі статусом 'charged'.")
         return
 
     context.user_data["debt_training_options"] = options
 
     keyboard = [
-        [InlineKeyboardButton(f"{d.strftime('%d.%m.%Y')} о {t}", callback_data=f"debt_check_{i}")]
-        for i, (tid, d, t) in enumerate(options)
+        [InlineKeyboardButton(label, callback_data=f"debt_check_{i}")]
+        for i, (_, _, label) in enumerate(options)
     ]
 
     await update.message.reply_text(
-        "Оберіть тренування для перевірки оплати:",
+        "Оберіть тренування для перевірки боргів:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
-
 
 async def handle_debt_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
     idx = int(query.data.replace("debt_check_", ""))
-    options = context.user_data.get("debt_training_options")
-    if not options or idx >= len(options):
+    options = context.user_data.get("debt_training_options", [])
+    if idx >= len(options):
         await query.edit_message_text("Помилка: тренування не знайдено.")
         return
 
-    training_id, date_obj, time_str = options[idx]
-    training_datetime = f"{date_obj.strftime('%d.%m.%Y')} {time_str}"
+    tid, ttype, label = options[idx]
 
-    votes = load_data('votes')["votes"].get(training_id, {})
-    payments = load_payments()
+    trainings = load_data("one_time_trainings" if ttype == "one_time" else "constant_trainings")
+    training = trainings.get(tid)
+    if not training:
+        await query.edit_message_text("Тренування не знайдено.")
+        return
+
+    training_id = (
+        f"{training['date']}_{training['start_hour']:02d}:{training['start_min']:02d}"
+        if ttype == "one_time"
+        else f"const_{training['weekday']}_{training['start_hour']:02d}:{training['start_min']:02d}"
+    )
+    training_datetime = (
+        f"{training['date']} {training['start_hour']:02d}:{training['start_min']:02d}"
+        if ttype == "one_time"
+        else f"{datetime.today().strftime('%d.%m.%Y')} {training['start_hour']:02d}:{training['start_min']:02d}"
+    )
+
+    votes = load_data("votes", {"votes": {}}).get("votes", {}).get(training_id, {})
+    payments = load_data("payments", [])
     paid_ids = {p["user_id"] for p in payments if p["training_id"] == training_id}
-
-    yes_voters = [uid for uid, v in votes.items() if v["vote"] == "yes" and uid not in paid_ids]
     all_yes = [uid for uid, v in votes.items() if v["vote"] == "yes"]
+    debtors = [uid for uid in all_yes if uid not in paid_ids]
 
-    if not yes_voters:
+    if not debtors:
         await query.edit_message_text("Усі, хто проголосував 'так', вже оплатили тренування.")
         return
 
-    per_person = round(TRAINING_COST / len(all_yes))
+    per_person = round(TRAINING_COST / len(all_yes)) if training.get("with_coach") else 0
     debts_before = load_debts()
 
-    for uid in yes_voters:
+    for uid in debtors:
         debt_entry = {
             "user_id": uid,
             "training_id": training_id,
@@ -219,7 +274,6 @@ async def handle_debt_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
         save_debt(debt_entry)
 
-        # Calculate total debt
         total_debt = sum(
             d["amount"] for d in debts_before + [debt_entry] if d["user_id"] == uid
         )
@@ -237,8 +291,11 @@ async def handle_debt_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             print(f"❌ Не вдалося надіслати повідомлення {uid}: {e}")
 
-    await query.edit_message_text(f"📬 Повідомлення про борг надіслано {len(yes_voters)} учасникам.")
+    # Update training status
+    trainings[tid]["status"] = "collected"
+    save_data(trainings, "one_time_trainings" if ttype == "one_time" else "constant_trainings")
 
+    await query.edit_message_text(f"📬 Повідомлення про борг надіслано {len(debtors)} учасникам.")
 
 async def pay_debt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = str(update.message.from_user.id)
