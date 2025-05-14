@@ -363,7 +363,6 @@ async def handle_pay_debt_confirmation(update: Update, context: ContextTypes.DEF
         await query.edit_message_text("Помилка: борг не знайдено для підтвердження.")
         return
 
-    # Save payment
     payments = load_data(PAYMENTS_FILE, [])
     payments.append({
         "user_id": selected_debt["user_id"],
@@ -372,12 +371,16 @@ async def handle_pay_debt_confirmation(update: Update, context: ContextTypes.DEF
         "training_datetime": selected_debt["training_datetime"],
         "card": selected_debt["card"]
     })
-    save_data(payments, PAYMENTS_FILE)
+    payments_dict = {str(i): payment for i, payment in enumerate(payments)}
+    save_data(payments_dict, PAYMENTS_FILE)
 
     # Remove debt
-    debts = load_data(DEBTS_FILE, [])
-    debts = [d for d in debts if
-             not (d["user_id"] == selected_debt["user_id"] and d["training_id"] == selected_debt["training_id"])]
+    debts = load_data(DEBTS_FILE, {})
+    debts = {
+        k: v for k, v in debts.items()
+        if not (v["user_id"] == selected_debt["user_id"] and v["training_id"] == selected_debt["training_id"])
+    }
     save_data(debts, DEBTS_FILE)
 
     await query.edit_message_text("✅ Дякуємо! Оплату зареєстровано і борг видалено.")
+
