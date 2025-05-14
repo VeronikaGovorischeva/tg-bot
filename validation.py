@@ -1,5 +1,5 @@
 danya_id, nika_id = 786580423, 1028639864
-ADMIN_IDS = [danya_id,]
+ADMIN_IDS = [danya_id, nika_id]
 
 
 def is_authorized(user_id):
