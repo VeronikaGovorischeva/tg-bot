@@ -299,9 +299,9 @@ async def handle_debt_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def pay_debt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = str(update.message.from_user.id)
-    debts = load_data(DEBTS_FILE, [])
+    debts = load_data(DEBTS_FILE, {})
 
-    user_debts = [d for d in debts if d["user_id"] == user_id]
+    user_debts = [d for d in debts.values() if d["user_id"] == user_id]
 
     if not user_debts:
         await update.message.reply_text("У тебе немає боргів! 🎉")
@@ -320,6 +320,7 @@ async def pay_debt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Оберіть борг, який хочете оплатити:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
+
 
 
 async def handle_pay_debt_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
