@@ -36,7 +36,7 @@ CONSTANT_TRAININGS_FILE = "constant_trainings.json"
 
 # UI Text constants
 MESSAGES = {
-    "unauthorized": "У вас немає дозволу на додавання тренувань.",
+    "unauthorized": "У вас немає дозволу на використання цієї команди.",
     "select_type": "Виберіть тип тренування:",
     "select_team": "Для якої команди це тренування?",
     "with_coach": "Це тренування з тренером?",

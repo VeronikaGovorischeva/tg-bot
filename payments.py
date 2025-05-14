@@ -1,9 +1,11 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes
+from telegram.ext import ContextTypes, ConversationHandler
 from data import load_data, save_data
 from trainings import get_last_training
+from validation import is_authorized
 from voting import load_votes
 from datetime import datetime, timedelta
+from trainings import MESSAGES
 
 DATA_FILE = "user_data.json"
 PAYMENTS_FILE = "payments.json"
@@ -43,81 +45,84 @@ async def charge_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     user_data = load_data(DATA_FILE)
     votes = load_votes()["votes"]
     date_str, training_id = get_last_training()
+    if not is_authorized(update.message.from_user.id):
+        await update.message.reply_text(MESSAGES["unauthorized"])
+        return ConversationHandler.END
+    else:
+        if not training_id:
+            await update.message.reply_text("Немає останнього тренування для нарахування.")
+            return
 
-    if not training_id:
-        await update.message.reply_text("Немає останнього тренування для нарахування.")
-        return
+        one_time_trainings = load_data("one_time_trainings.json", {})
+        constant_trainings = load_data("constant_trainings.json", {})
 
-    one_time_trainings = load_data("one_time_trainings.json", {})
-    constant_trainings = load_data("constant_trainings.json", {})
+        training_key = None
+        training = None
 
-    training_key = None
-    training = None
+        if str(training_id) in one_time_trainings:
+            training = one_time_trainings[str(training_id)]
+            date = training["date"]
+            hour = training["start_hour"]
+            minute = training["start_min"]
+            training_key = f"{date}_{hour:02d}:{minute:02d}"
+        elif str(training_id) in constant_trainings:
+            training = constant_trainings[str(training_id)]
+            weekday = training["weekday"]
+            hour = training["start_hour"]
+            minute = training["start_min"]
+            training_key = f"const_{weekday}_{hour:02d}:{minute:02d}"
 
-    if str(training_id) in one_time_trainings:
-        training = one_time_trainings[str(training_id)]
-        date = training["date"]
-        hour = training["start_hour"]
-        minute = training["start_min"]
-        training_key = f"{date}_{hour:02d}:{minute:02d}"
-    elif str(training_id) in constant_trainings:
-        training = constant_trainings[str(training_id)]
-        weekday = training["weekday"]
-        hour = training["start_hour"]
-        minute = training["start_min"]
-        training_key = f"const_{weekday}_{hour:02d}:{minute:02d}"
+        if not training_key or training_key not in votes:
+            await update.message.reply_text("Ніхто не проголосував 'так' за останнє тренування.")
+            return
 
-    if not training_key or training_key not in votes:
-        await update.message.reply_text("Ніхто не проголосував 'так' за останнє тренування.")
-        return
+        voters = votes[training_key]
+        yes_voters = [uid for uid, v in voters.items() if v["vote"] == "yes"]
 
-    voters = votes[training_key]
-    yes_voters = [uid for uid, v in voters.items() if v["vote"] == "yes"]
+        if not yes_voters:
+            await update.message.reply_text("Ніхто не проголосував 'так' за останнє тренування.")
+            return
 
-    if not yes_voters:
-        await update.message.reply_text("Ніхто не проголосував 'так' за останнє тренування.")
-        return
+        per_person = round(TRAINING_COST / len(yes_voters)) if training.get("with_coach") else 0
+        training_datetime = (
+            f"{training['date']} {training['start_hour']:02d}:{training['start_min']:02d}"
+            if 'date' in training else f"{date_str} {hour:02d}:{minute:02d}"
+        )
 
-    per_person = round(TRAINING_COST / len(yes_voters)) if training.get("with_coach") else 0
-    training_datetime = (
-        f"{training['date']} {training['start_hour']:02d}:{training['start_min']:02d}"
-        if 'date' in training else f"{date_str} {hour:02d}:{minute:02d}"
-    )
+        for uid in yes_voters:
+            uid_str = str(uid)
+            if uid_str not in user_data:
+                continue
 
-    for uid in yes_voters:
-        uid_str = str(uid)
-        if uid_str not in user_data:
-            continue
+            context.bot_data[f"charge_{uid_str}"] = {
+                "training_id": training_key,
+                "amount": per_person,
+                "training_datetime": training_datetime,
+                "card": CARD_NUMBER
+            }
 
-        context.bot_data[f"charge_{uid_str}"] = {
-            "training_id": training_key,
-            "amount": per_person,
-            "training_datetime": training_datetime,
-            "card": CARD_NUMBER
-        }
-
-        keyboard = [
-            [
-                InlineKeyboardButton("✅ Я оплатив(ла)", callback_data=f"paid_yes_{uid_str}"),
-                InlineKeyboardButton("❌ Ще не оплатив(ла)", callback_data=f"paid_no_{uid_str}")
+            keyboard = [
+                [
+                    InlineKeyboardButton("✅ Я оплатив(ла)", callback_data=f"paid_yes_{uid_str}"),
+                    InlineKeyboardButton("❌ Ще не оплатив(ла)", callback_data=f"paid_no_{uid_str}")
+                ]
             ]
-        ]
 
-        try:
-            await context.bot.send_message(
-                chat_id=int(uid),
-                text=(
-                    f"💳 Ти відвідав(-ла) останнє тренування {training_datetime}.\n"
-                    f"Сума до сплати: {per_person} грн\n"
-                    f"Карта для оплати: {CARD_NUMBER}\n\n"
-                    f"Натисни, якщо ти вже оплатив:"
-                ),
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
-        except Exception as e:
-            print(f"❌ Помилка надсилання повідомлення для {uid}: {e}")
+            try:
+                await context.bot.send_message(
+                    chat_id=int(uid),
+                    text=(
+                        f"💳 Ти відвідав(-ла) останнє тренування {training_datetime}.\n"
+                        f"Сума до сплати: {per_person} грн\n"
+                        f"Карта для оплати: {CARD_NUMBER}\n\n"
+                        f"Натисни, якщо ти вже оплатив:"
+                    ),
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+            except Exception as e:
+                print(f"❌ Помилка надсилання повідомлення для {uid}: {e}")
 
-    await update.message.reply_text("✅ Повідомлення з інструкцією надіслано всім, хто голосував 'так'.")
+        await update.message.reply_text("✅ Повідомлення з інструкцією надіслано всім, хто голосував 'так'.")
 
 
 async def handle_payment_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -148,37 +153,41 @@ async def handle_payment_confirmation(update: Update, context: ContextTypes.DEFA
 
 async def collect_debts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     votes = load_votes()["votes"]
-
-    two_weeks_ago = datetime.today().date() - timedelta(days=14)
-    options = []
-
-    for tid, training_votes in votes.items():
-        if tid.startswith("const_"):
-            continue  # optional: skip constant trainings if you want
-
-        try:
-            date_part, time_part = tid.split("_")
-            training_date = datetime.strptime(date_part, "%d.%m.%Y").date()
-            if training_date >= two_weeks_ago:
-                options.append((tid, training_date, time_part))
-        except:
-            continue
-
-    if not options:
-        await update.message.reply_text("Немає тренувань за останні 2 тижні.")
+    user_id = update.message.from_user.id
+    if not is_authorized(user_id):
+        await update.message.reply_text("Bи не маєте достатньо прав для надсилання повідомлень")
         return
+    else:
+        two_weeks_ago = datetime.today().date() - timedelta(days=14)
+        options = []
 
-    context.user_data["debt_training_options"] = options
+        for tid, training_votes in votes.items():
+            if tid.startswith("const_"):
+                continue  # optional: skip constant trainings if you want
 
-    keyboard = [
-        [InlineKeyboardButton(f"{d.strftime('%d.%m.%Y')} о {t}", callback_data=f"debt_check_{i}")]
-        for i, (tid, d, t) in enumerate(options)
-    ]
+            try:
+                date_part, time_part = tid.split("_")
+                training_date = datetime.strptime(date_part, "%d.%m.%Y").date()
+                if training_date >= two_weeks_ago:
+                    options.append((tid, training_date, time_part))
+            except:
+                continue
 
-    await update.message.reply_text(
-        "Оберіть тренування для перевірки оплати:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+        if not options:
+            await update.message.reply_text("Немає тренувань за останні 2 тижні.")
+            return
+
+        context.user_data["debt_training_options"] = options
+
+        keyboard = [
+            [InlineKeyboardButton(f"{d.strftime('%d.%m.%Y')} о {t}", callback_data=f"debt_check_{i}")]
+            for i, (tid, d, t) in enumerate(options)
+        ]
+
+        await update.message.reply_text(
+            "Оберіть тренування для перевірки оплати:",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
 
 
 async def handle_debt_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
