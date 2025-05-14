@@ -1,18 +1,24 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from data import load_data
+from validation import ADMIN_IDS
 
 SEND_MESSAGE_STATE = {}
 
 async def send_message_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("Чоловіча команда", callback_data="send_team_Male"),
-            InlineKeyboardButton("Жіноча команда", callback_data="send_team_Female"),
-        ],
-        [InlineKeyboardButton("Обидві команди", callback_data="send_team_Both")]
-    ])
-    await update.message.reply_text("Оберіть команду пахъаххахахахахахах, якій хочете надіслати повідомлення:", reply_markup=keyboard)
+   user_id = update.message.from_user.id
+   if user_id not in ADMIN_IDS:
+       await update.message.reply_text("и не маєте достатньо прав для надсилання повідомлень")
+       return
+   else:
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("Чоловіча команда", callback_data="send_team_Male"),
+                InlineKeyboardButton("Жіноча команда", callback_data="send_team_Female"),
+            ],
+            [InlineKeyboardButton("Обидві команди", callback_data="send_team_Both")]
+        ])
+        await update.message.reply_text("Оберіть команду пахъаххахахахахахах, якій хочете надіслати повідомлення:", reply_markup=keyboard)
 
 
 async def handle_send_message_team_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
