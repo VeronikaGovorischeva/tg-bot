@@ -38,7 +38,7 @@ async def vote_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
     trainings = get_next_week_trainings(team)
     filtered = []
 
-    for idx, training in enumerate(trainings):
+    for training in trainings:
         start_voting = training.get("start_voting")
         end_voting = training.get("end_voting")
 
@@ -60,7 +60,7 @@ async def vote_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 date_str = training["date"] if isinstance(training["date"], str) else training["date"].strftime(
                     "%d.%m.%Y")
                 training_id = f"{date_str}_{training['start_hour']:02d}:{training['start_min']:02d}"
-                filtered.append((idx, training_id, training))
+                filtered.append((training_id, training))
         else:
             if not isinstance(start_voting, int) or not isinstance(end_voting, int):
                 continue
@@ -73,20 +73,20 @@ async def vote_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 date_str = training['date'].strftime("%d.%m.%Y") if isinstance(training['date'], datetime.date) else \
                     training['date']
                 training_id = f"{date_str}_{training['start_hour']:02d}:{training['start_min']:02d}"
-                filtered.append((idx, training_id, training))
+                filtered.append((training_id, training))
 
     if not filtered:
         await update.message.reply_text("Наразі немає тренувань для голосування.")
         return
 
     keyboard = []
-    for i, tid, t in filtered:
+    for idx, (tid, t) in enumerate(filtered):
         if t["type"] == "one-time":
             date_str = t["date"].strftime("%d.%m.%Y") if isinstance(t["date"], datetime.date) else t["date"]
         else:
             date_str = WEEKDAYS[t["date"].weekday()]
         time_str = f"{t['start_hour']:02d}:{t['start_min']:02d}"
-        keyboard.append([InlineKeyboardButton(f"{date_str} {time_str}", callback_data=f"training_vote_{i}")])
+        keyboard.append([InlineKeyboardButton(f"{date_str} {time_str}", callback_data=f"training_vote_{idx}")])
 
     context.user_data["vote_options"] = filtered
 
@@ -99,7 +99,13 @@ async def handle_training_vote_selection(update: Update, context: ContextTypes.D
 
     user_id = str(query.from_user.id)
     idx = int(query.data.replace("training_vote_", ""))
-    _, training_id, _ = context.user_data["vote_options"][idx]
+    vote_options = context.user_data.get("vote_options", [])
+
+    if idx >= len(vote_options):
+        await query.edit_message_text("⚠️ Помилка: вибране тренування більше не доступне.")
+        return
+
+    training_id, training = vote_options[idx]
 
     # Не знаю чи потрібно
     # vote_options = context.user_data.get("vote_options")
