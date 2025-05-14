@@ -8,3 +8,4 @@ google-auth-httplib2>=0.1.0
 google-auth-oauthlib>=1.0.0
 google~=3.0.0
 protobuf~=6.30.2
+pymongo>=4.0.0
