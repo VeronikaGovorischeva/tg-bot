@@ -72,7 +72,7 @@ async def vote_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if weekday_condition and today.weekday() <= end_voting:
                 date_str = training['date'].strftime("%d.%m.%Y") if isinstance(training['date'], datetime.date) else \
                     training['date']
-                training_id = f"{date_str}_{training['start_hour']:02d}:{training['start_min']:02d}"
+                training_id = generate_training_id(training)
                 filtered.append((training_id, training))
 
     if not filtered:
