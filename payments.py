@@ -224,10 +224,10 @@ async def collect_debts(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_debt_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-
-    idx = int(query.data.replace("debt_check_", ""))
     user_id = str(update.effective_user.id)
     options = context.bot_data.get(f"debt_training_options_{user_id}", [])
+
+    idx = int(query.data.replace("debt_check_", ""))
     if idx >= len(options):
         await query.edit_message_text("Помилка: тренування не знайдено.")
         return
