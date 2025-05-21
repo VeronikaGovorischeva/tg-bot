@@ -210,8 +210,7 @@ async def collect_debts(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Немає тренувань зі статусом 'charged'.")
         return
 
-    context.user_data["debt_training_options"] = options
-
+    context.bot_data[f"debt_training_options_{update.effective_user.id}"] = options
     keyboard = [
         [InlineKeyboardButton(label, callback_data=f"debt_check_{i}")]
         for i, (_, _, label) in enumerate(options)
@@ -227,7 +226,8 @@ async def handle_debt_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     idx = int(query.data.replace("debt_check_", ""))
-    options = context.user_data.get("debt_training_options", [])
+    user_id = str(update.effective_user.id)
+    options = context.bot_data.get(f"debt_training_options_{user_id}", [])
     if idx >= len(options):
         await query.edit_message_text("Помилка: тренування не знайдено.")
         return
