@@ -251,7 +251,9 @@ async def handle_debt_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else f"{datetime.today().strftime('%d.%m.%Y')} {training['start_hour']:02d}:{training['start_min']:02d}"
     )
 
-    votes = load_data("votes", {"votes": {}}).get("votes", {}).get(training_id, {})
+    raw_votes = load_data("votes", {"votes": {}})
+    votes_data = raw_votes.get("votes") if isinstance(raw_votes, dict) and "votes" in raw_votes else raw_votes
+    votes = votes_data.get(training_id, {}) if isinstance(votes_data, dict) else {}
     payments = load_data("payments", [])
     paid_ids = {p["user_id"] for p in payments if p["training_id"] == training_id}
     all_yes = [uid for uid, v in votes.items() if v["vote"] == "yes"]
