@@ -258,7 +258,8 @@ async def handle_debt_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
         votes_data = raw_votes
 
     votes = votes_data.get(training_id, {}) if isinstance(votes_data, dict) else {}
-    payments = load_data("payments", [])
+    payments_dict = load_data("payments", {})
+    payments = list(payments_dict.values())
     paid_ids = {p["user_id"] for p in payments if p["training_id"] == training_id}
     all_yes = [uid for uid, v in votes.items() if v["vote"] == "yes"]
     debtors = [uid for uid in all_yes if uid not in paid_ids]
@@ -268,7 +269,8 @@ async def handle_debt_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     per_person = round(TRAINING_COST / len(all_yes)) if training.get("with_coach") else 0
-    debts_before = load_debts()
+    debts_dict = load_data("debts", {})
+    debts_before = list(debts_dict.values())
 
     for uid in debtors:
         debt_entry = {
