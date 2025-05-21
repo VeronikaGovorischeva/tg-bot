@@ -245,12 +245,16 @@ async def handle_debt_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if ttype == "one_time"
         else f"const_{training['weekday']}_{training['start_hour']:02d}:{training['start_min']:02d}"
     )
-    training_datetime = (
-        f"{training['date']} {training['start_hour']:02d}:{training['start_min']:02d}"
-        if ttype == "one_time"
-        else f"{datetime.today().strftime('%d.%m.%Y')} {training['start_hour']:02d}:{training['start_min']:02d}"
-    )
+    if ttype == "constant":
+        today = datetime.today()
+        weekday = training["weekday"]
+        days_until = (weekday - today.weekday()) % 7 or 7
+        training_date = today + timedelta(days=days_until)
+        date_str = training_date.strftime("%d.%m.%Y")
+    else:
+        date_str = training["date"]
 
+    training_datetime = f"{date_str} {training['start_hour']:02d}:{training['start_min']:02d}"
     raw_votes = load_data("votes", {"votes": {}})
     if isinstance(raw_votes, dict) and "votes" in raw_votes:
         votes_data = raw_votes["votes"]
