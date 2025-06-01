@@ -161,5 +161,98 @@ async def handle_payment_confirmation(update: Update, context: ContextTypes.DEFA
                         except Exception as e:
                             print(f"❌ Не вдалося надіслати повідомлення адміну {admin}: {e}")
                     return
+async def pay_debt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = str(update.message.from_user.id)
+    payments = load_data("payments", {})
 
+    user_debts = [p for p in payments.values() if p["user_id"] == user_id and not p.get("paid", False)]
+
+    if not user_debts:
+        await update.message.reply_text("🎉 У тебе немає неоплачених тренувань!")
+        return
+
+    context.user_data["pay_debt_options"] = user_debts
+
+    keyboard = [
+        [InlineKeyboardButton(
+            f"{p['training_datetime']} - {p['amount']} грн",
+            callback_data=f"paydebt_select_{i}"
+        )] for i, p in enumerate(user_debts)
+    ]
+
+    await update.message.reply_text(
+        "Оберіть тренування для підтвердження оплати:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def handle_pay_debt_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+
+    idx = int(query.data.replace("paydebt_select_", ""))
+    options = context.user_data.get("pay_debt_options", [])
+
+    if not options or idx >= len(options):
+        await query.edit_message_text("⚠️ Помилка: тренування не знайдено.")
+        return
+
+    selected = options[idx]
+    context.user_data["selected_debt"] = selected
+
+    keyboard = [
+        [InlineKeyboardButton("✅ Так, оплатив(ла)", callback_data="paydebt_confirm_yes")]
+    ]
+
+    await query.edit_message_text(
+        f"Ти точно оплатив(-ла) {selected['amount']} грн за тренування {selected['training_datetime']}?",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def handle_pay_debt_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+
+    selected = context.user_data.get("selected_debt")
+    if not selected:
+        await query.edit_message_text("⚠️ Помилка: тренування не знайдено.")
+        return
+
+    payments = load_data("payments", {})
+    key = f"{selected['training_id']}_{selected['user_id']}"
+
+    if key not in payments:
+        await query.edit_message_text("⚠️ Помилка: запис про платіж не знайдено.")
+        return
+
+    payments[key]["paid"] = True
+    save_data(payments, "payments")
+    await query.edit_message_text("✅ Дякуємо! Оплату зареєстровано.")
+
+    # Optional: Check if all paid -> notify admins
+    training_id = selected["training_id"]
+    all_paid = all(p["paid"] for p in payments.values() if p["training_id"] == training_id)
+    if all_paid:
+        from validation import ADMIN_IDS
+        from trainings import load_data as load_trainings, save_data as save_trainings
+        one_time = load_trainings("one_time_trainings")
+        constant = load_trainings("constant_trainings")
+        for t in (one_time, constant):
+            for tid, tr in t.items():
+                tr_id = (
+                    f"{tr['date']}_{tr['start_hour']:02d}:{tr['start_min']:02d}"
+                    if "date" in tr
+                    else f"const_{tr['weekday']}_{tr['start_hour']:02d}:{tr['start_min']:02d}"
+                )
+                if tr_id == training_id:
+                    tr["status"] = "collected"
+                    save_trainings(t, "one_time_trainings" if "date" in tr else "constant_trainings")
+                    for admin in ADMIN_IDS:
+                        try:
+                            await context.bot.send_message(
+                                chat_id=int(admin),
+                                text=f"✅ Всі учасники тренування {training_id} оплатили. Статус оновлено на 'collected'."
+                            )
+                        except Exception as e:
+                            print(f"❌ Не вдалося надіслати повідомлення адміну {admin}: {e}")
+                    return
 

@@ -3,7 +3,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from telegram import Update
 import asyncio
 
-from payments import charge_all, handle_payment_confirmation, handle_charge_selection
+from payments import *
 from trainings import create_training_add_handler, add_training, next_training, last_training, week_trainings
 from registration import create_registration_handler
 from notifier import check_voting_and_notify, start_voting
@@ -81,6 +81,9 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("charge_all", charge_all))
     app.add_handler(CallbackQueryHandler(handle_payment_confirmation, pattern=r"^paid_yes_.*"))
     app.add_handler(CallbackQueryHandler(handle_charge_selection, pattern=r"^charge_select_\d+"))
+    app.add_handler(CommandHandler("pay_debt", pay_debt))
+    app.add_handler(CallbackQueryHandler(handle_pay_debt_selection, pattern=r"^paydebt_select_\d+$"))
+    app.add_handler(CallbackQueryHandler(handle_pay_debt_confirmation, pattern=r"^paydebt_confirm_yes$"))
 
     # app.add_handler(CommandHandler("next_game", next_game))
     # app.add_handler(CommandHandler("check_debt", check_debt))
