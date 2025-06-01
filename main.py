@@ -81,11 +81,6 @@ if __name__ == "__main__":
 
     app.add_handler(CommandHandler("charge_all", charge_all))
     app.add_handler(CallbackQueryHandler(handle_payment_confirmation, pattern=r"^paid_(yes|no)_\d+"))
-    app.add_handler(CommandHandler("collect_debts", collect_debts))
-    app.add_handler(CallbackQueryHandler(handle_debt_check, pattern=r"^debt_check_\d+"))
-    app.add_handler(CommandHandler("pay_debt", pay_debt))
-    app.add_handler(CallbackQueryHandler(handle_pay_debt_selection, pattern=r"^paydebt_select_\d+$"))
-    app.add_handler(CallbackQueryHandler(handle_pay_debt_confirmation, pattern=r"^paydebt_confirm_(yes|no)$"))
     app.add_handler(CallbackQueryHandler(handle_charge_selection, pattern=r"^charge_select_\d+"))
 
     # app.add_handler(CommandHandler("next_game", next_game))

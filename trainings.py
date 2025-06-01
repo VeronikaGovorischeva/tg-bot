@@ -483,7 +483,7 @@ async def week_trainings(update: Update, context: ContextTypes.DEFAULT_TYPE):
         coach_str = " з тренером" if t["with_coach"] else ""
         team_str = "" if t["team"] == "Both" else f" ({'чоловіча' if t['team'] == 'Male' else 'жіноча'} команда)"
         day = weekday_names[t["date"].weekday()]
-        message += f"• {day}, {date_str} з {start} до {end}{coach_str}{team_str} ({t['type']})\n"
+        message += f"• {day}, {date_str} з {start} до {end}{coach_str}{team_str} "
 
     await update.message.reply_text(message)
 
