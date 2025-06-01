@@ -132,8 +132,7 @@ class MessageHandlers:
         Returns:
             str: Message listing all available commands.
         """
-        commands = [f"/{cmd}" for cmd in self.commands.keys()]
-        return f"Використовуй команди {' '.join(commands)} щоб дізнатися інфу про наступне тренування та наступну гру."
+        return f"Використовуй команди з меню для інформації про тренування, оплату та голосувань"
 
     @staticmethod
     def create_team_keyboard() -> InlineKeyboardMarkup:
