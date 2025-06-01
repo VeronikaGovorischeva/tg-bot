@@ -134,7 +134,7 @@ async def handle_training_vote_selection(update: Update, context: ContextTypes.D
 
     message = f"Тренування: {training_info}\n"
     if current_vote:
-        message += f"Ваш поточний голос: {'✅' if current_vote == 'yes' else '❌'}\n"
+        message += f"Ваш поточний голос: {'БУДУ' if current_vote == 'yes' else 'НЕ БУДУ'}\n"
     message += "Чи будете на тренуванні?"
 
     await query.edit_message_text(message, reply_markup=InlineKeyboardMarkup(keyboard))
@@ -178,7 +178,7 @@ async def handle_vote(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Перевіряємо, чи досягнуто ліміт після оновлення
     updated_yes_votes = sum(1 for v in votes["votes"][training_id].values() if v["vote"] == "yes")
 
-    message = f"Ваш голос: {'✅' if vote == 'yes' else '❌'} записано!"
+    message = f"Ваш голос: {'БУДУ' if vote == 'yes' else 'НЕ БУДУ'} записано!"
 
     if updated_yes_votes == VOTES_LIMIT:
         message += "\n⚠️ Досягнуто максимум учасників."
