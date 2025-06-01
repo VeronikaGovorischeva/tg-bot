@@ -223,8 +223,8 @@ async def training_start_voting(update: Update, context: ContextTypes.DEFAULT_TY
         if not update.message:
             return START_VOTING
         context.user_data['start_voting'] = update.message.text
-        await update.message.reply_text(MESSAGES["enter_voting_end_date"])
         await save_training_data(update, context)
+        await update.message.reply_text(MESSAGES["training_saved"])
         return ConversationHandler.END
     else:
         query = update.callback_query
@@ -233,6 +233,7 @@ async def training_start_voting(update: Update, context: ContextTypes.DEFAULT_TY
         await save_training_data(update, context)
         await query.edit_message_text(MESSAGES["training_saved"])
         return ConversationHandler.END
+
 
 
 async def save_training_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
