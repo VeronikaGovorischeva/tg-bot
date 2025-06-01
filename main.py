@@ -3,8 +3,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from telegram import Update
 import asyncio
 
-from payments import charge_all, handle_payment_confirmation, collect_debts, handle_debt_check, pay_debt, \
-    handle_pay_debt_selection, handle_pay_debt_confirmation, handle_charge_selection
+from payments import charge_all, handle_payment_confirmation, handle_charge_selection
 from trainings import create_training_add_handler, add_training, next_training, last_training, week_trainings
 from registration import create_registration_handler
 from notifier import check_voting_and_notify, start_voting
