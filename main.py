@@ -79,7 +79,7 @@ if __name__ == "__main__":
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_send_message_input))
 
     app.add_handler(CommandHandler("charge_all", charge_all))
-    app.add_handler(CallbackQueryHandler(handle_payment_confirmation, pattern=r"^paid_(yes|no)_\d+"))
+    app.add_handler(CallbackQueryHandler(handle_payment_confirmation, pattern=r"^paid_yes_.*"))
     app.add_handler(CallbackQueryHandler(handle_charge_selection, pattern=r"^charge_select_\d+"))
 
     # app.add_handler(CommandHandler("next_game", next_game))
