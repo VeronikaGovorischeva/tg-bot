@@ -537,3 +537,23 @@ async def last_training(update, context: ContextTypes.DEFAULT_TYPE):
     else:
         message = "Немає записаних тренувань."
     await update.message.reply_text(message)
+
+import datetime
+from data import load_data, save_data
+
+def reset_today_constant_trainings_status():
+    today_weekday = datetime.datetime.today().weekday()
+    constant_trainings = load_data("constant_trainings", {})
+
+    updated = False
+    for tid, training in constant_trainings.items():
+        if training.get("weekday") == today_weekday:
+            if training.get("status") != "not charged":
+                training["status"] = "not charged"
+                updated = True
+
+    if updated:
+        save_data(constant_trainings, "constant_trainings")
+        print("✅ Reset status of constant trainings for today.")
+    else:
+        print("ℹ️ No constant trainings needed status reset today.")
