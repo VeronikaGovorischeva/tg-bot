@@ -40,7 +40,6 @@ async def vote_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     for training in trainings:
         start_voting = training.get("start_voting")
-        end_voting = training.get("end_voting")
 
         if training["type"] == "one-time":
             try:
@@ -48,28 +47,23 @@ async def vote_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     start_date = datetime.datetime.strptime(start_voting, "%d.%m.%Y").date()
                 else:
                     start_date = start_voting
-
-                if isinstance(end_voting, str):
-                    end_date = datetime.datetime.strptime(end_voting, "%d.%m.%Y").date()
-                else:
-                    end_date = end_voting
             except Exception:
                 continue
 
-            if (start_date < today or (start_date == today and current_hour >= 18)) and today <= end_date:
+            if (start_date < today or (start_date == today and current_hour >= 18)):
                 date_str = training["date"] if isinstance(training["date"], str) else training["date"].strftime(
                     "%d.%m.%Y")
                 training_id = f"{date_str}_{training['start_hour']:02d}:{training['start_min']:02d}"
                 filtered.append((training_id, training))
         else:
-            if not isinstance(start_voting, int) or not isinstance(end_voting, int):
+            if not isinstance(start_voting, int):
                 continue
             weekday_condition = (
                     start_voting < today.weekday() or
                     (start_voting == today.weekday() and current_hour >= 18)
             )
 
-            if weekday_condition and today.weekday() <= end_voting:
+            if weekday_condition:
                 date_str = training['date'].strftime("%d.%m.%Y") if isinstance(training['date'], datetime.date) else \
                     training['date']
                 training_id = generate_training_id(training)
@@ -228,12 +222,14 @@ async def view_votes(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def is_vote_active(vote_id, today):
-    """
-    Перевіряє чи голосування активне зараз
-    """
-    # Ця функція має бути реалізована відповідно до логіки вашого додатку
-    # Наразі просто повертаємо True, щоб показати всі голосування
-    return True
+    if "const_" in vote_id:
+        return True
+    try:
+        date = datetime.datetime.strptime(vote_id.split("_")[0], "%d.%m.%Y").date()
+        return today <= date
+    except Exception:
+        return False
+
 
 
 # maybe change a bit

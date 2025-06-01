@@ -50,11 +50,11 @@ async def check_voting_and_notify(app: Application):
     votes_data = load_data(VOTES_FILE, {"votes": {}})
 
     for training_id, training in one_time_trainings.items():
-        if training.get("end_voting") == today.strftime("%d.%m.%Y"):
+        training_date = datetime.strptime(training["date"], "%d.%m.%Y").date()
+        if (training_date - today).days == 1:
             await send_voting_reminder(app, training, training_id, users, votes_data, "one-time")
     for training_id, training in constant_trainings.items():
-        end_weekday = training.get("end_voting")
-        if isinstance(end_weekday, int) and end_weekday % 7 == weekday:
+        if training.get("weekday") == weekday:
             await send_voting_reminder(app, training, training_id, users, votes_data, "constant")
 
 

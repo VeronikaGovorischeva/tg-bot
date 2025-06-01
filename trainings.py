@@ -28,7 +28,7 @@ class VotingType(Enum):
 
 
 # Conversation states
-TYPE, TEAM, COACH, DATE, START, END, WEEKDAY, START_VOTING, END_VOTING = range(9)
+TYPE, TEAM, COACH, DATE, START, END, WEEKDAY, START_VOTING = range(8)
 
 # File paths
 ONE_TIME_TRAININGS_FILE = "one_time_trainings"
@@ -48,8 +48,6 @@ MESSAGES = {
     "invalid_time": "Неправильний формат часу. Будь ласка, використовуйте формат ГГ:ХХ",
     "enter_voting_start_date": "Введіть дату початку голосування (ДД.ММ.РРРР):",
     "select_voting_start_day": "Оберіть день тижня для початку голосування:",
-    "enter_voting_end_date": "Введіть дату завершення голосування (ДД.ММ.РРРР):",
-    "select_voting_end_day": "Оберіть день тижня для завершення голосування:",
     "training_saved": "Тренування успішно збережено!"
 
 }
@@ -226,7 +224,8 @@ async def training_start_voting(update: Update, context: ContextTypes.DEFAULT_TY
             return START_VOTING
         context.user_data['start_voting'] = update.message.text
         await update.message.reply_text(MESSAGES["enter_voting_end_date"])
-        return END_VOTING
+        await save_training_data(update, context)
+        return ConversationHandler.END
     else:
         query = update.callback_query
         await query.answer()
@@ -235,23 +234,8 @@ async def training_start_voting(update: Update, context: ContextTypes.DEFAULT_TY
             MESSAGES["select_voting_end_day"],
             reply_markup=create_voting_day_keyboard("voting_end_day_")
         )
-        return END_VOTING
-
-
-async def training_end_voting(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    is_onetime = context.user_data['training_type'] == TrainingType.ONE_TIME.value
-
-    if is_onetime:
-        if not update.message:
-            return END_VOTING
-        context.user_data['end_voting'] = update.message.text
-    else:
-        query = update.callback_query
-        await query.answer()
-        context.user_data['end_voting'] = int(query.data.split("_")[-1])
-
-    await save_training_data(update, context)
-    return ConversationHandler.END
+        await save_training_data(update, context)
+        return ConversationHandler.END
 
 
 async def save_training_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -263,7 +247,6 @@ async def save_training_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "end_hour": context.user_data['end_hour'],
         "end_min": context.user_data['end_min'],
         "start_voting": context.user_data['start_voting'],
-        "end_voting": context.user_data['end_voting'],
         "status": "not charged"
     }
 
@@ -306,8 +289,6 @@ def create_training_add_handler():
             WEEKDAY: [CallbackQueryHandler(training_weekday)],
             START_VOTING: [MessageHandler(filters.TEXT & ~filters.COMMAND, training_start_voting),
                            CallbackQueryHandler(training_start_voting, pattern=r"^voting_day_")],
-            END_VOTING: [MessageHandler(filters.TEXT & ~filters.COMMAND, training_end_voting),
-                         CallbackQueryHandler(training_end_voting, pattern=r"^voting_end_day_")],
         },
         fallbacks=[CommandHandler('cancel', cancel)],
     )
@@ -422,7 +403,6 @@ def get_next_week_trainings(team=None):
                 trainings.append({
                     "weekday": training_weekday,
                     "start_voting": training.get("start_voting"),
-                    "end_voting": training.get("end_voting"),
                     "date": training_date,
                     "start_hour": training["start_hour"],
                     "start_min": training["start_min"],
@@ -444,7 +424,6 @@ def get_next_week_trainings(team=None):
         if current_date <= training_date <= end_date:
             trainings.append({
                 "start_voting": training.get("start_voting"),
-                "end_voting": training.get("end_voting"),
                 "date": training_date,
                 "start_hour": training["start_hour"],
                 "start_min": training["start_min"],
