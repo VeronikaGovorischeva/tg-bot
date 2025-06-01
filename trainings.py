@@ -230,11 +230,8 @@ async def training_start_voting(update: Update, context: ContextTypes.DEFAULT_TY
         query = update.callback_query
         await query.answer()
         context.user_data['start_voting'] = int(query.data.split("_")[-1])
-        await query.edit_message_text(
-            MESSAGES["select_voting_end_day"],
-            reply_markup=create_voting_day_keyboard("voting_end_day_")
-        )
         await save_training_data(update, context)
+        await query.edit_message_text(MESSAGES["training_saved"])
         return ConversationHandler.END
 
 
