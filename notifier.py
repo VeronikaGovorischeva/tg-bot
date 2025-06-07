@@ -124,7 +124,7 @@ async def send_voting_reminder(app, training, training_id, users, votes_data, tr
         date_str = WEEKDAYS[training['weekday']]
 
     votes = votes_data.get("votes", {}).get(vote_id, {})
-    voted_users = set(votes.keys())
+    voted_users = set(str(uid) for uid in votes.keys())
 
     message = (
         f"⏰ Нагадування про голосування!\n"

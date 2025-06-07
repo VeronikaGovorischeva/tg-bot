@@ -7,6 +7,72 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
 from data import load_data, save_data
 from trainings import get_next_week_trainings
+from telegram.ext import ConversationHandler
+from validation import is_authorized
+import uuid
+from validation import is_authorized
+from telegram.ext import CommandHandler
+
+async def unlock_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_authorized(update.message.from_user.id):
+        await update.message.reply_text("У вас немає прав для цієї команди.")
+        return
+
+    one_time = load_data("one_time_trainings", {})
+    constant = load_data("constant_trainings", {})
+
+    options = []
+
+    for tid, t in one_time.items():
+        if t.get("team") in ["Male", "Female"]:
+            label = f"{t['date']} о {t['start_hour']:02d}:{t['start_min']:02d}"
+            options.append((tid, "one_time", label))
+
+    for tid, t in constant.items():
+        if t.get("team") in ["Male", "Female"]:
+            weekday = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"][t["weekday"]]
+            label = f"{weekday} о {t['start_hour']:02d}:{t['start_min']:02d}"
+            options.append((tid, "constant", label))
+
+    if not options:
+        await update.message.reply_text("Немає тренувань, які потребують розблокування.")
+        return
+
+    context.user_data["unlock_options"] = options
+
+    keyboard = [
+        [InlineKeyboardButton(label, callback_data=f"unlock_training_{i}")]
+        for i, (_, _, label) in enumerate(options)
+    ]
+
+    await update.message.reply_text(
+        "Оберіть тренування, щоб дозволити голосування обом командам:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def handle_unlock_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    idx = int(query.data.replace("unlock_training_", ""))
+    options = context.user_data.get("unlock_options", [])
+
+    if idx >= len(options):
+        await query.edit_message_text("⚠️ Помилка: тренування не знайдено.")
+        return
+
+    tid, ttype, _ = options[idx]
+    trainings = load_data("one_time_trainings" if ttype == "one_time" else "constant_trainings", {})
+
+    if tid not in trainings:
+        await query.edit_message_text("⚠️ Тренування не знайдено.")
+        return
+
+    trainings[tid]["team"] = "Both"
+    save_data(trainings, "one_time_trainings" if ttype == "one_time" else "constant_trainings")
+
+    await query.edit_message_text("✅ Тренування оновлено. Тепер обидві команди можуть голосувати.")
+
 
 WEEKDAYS = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"]
 
@@ -14,6 +80,112 @@ REGISTRATION_FILE = "users"
 VOTES_FILE = "training_votes"
 DEFAULT_VOTES_STRUCTURE = {"votes": {}}
 VOTES_LIMIT = 14
+
+
+VOTE_OTHER_NAME, VOTE_OTHER_SELECT = range(2)
+
+async def vote_for(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_authorized(update.message.from_user.id):
+        await update.message.reply_text("У вас немає прав для цієї команди.")
+        return ConversationHandler.END
+
+    context.user_data["vote_other_id"] = f"admin_{uuid.uuid4().hex[:8]}"
+    await update.message.reply_text("Введіть ім'я або прізвище людини, за яку голосуєте:")
+    return VOTE_OTHER_NAME
+
+
+async def vote_other_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    name = update.message.text
+    context.user_data["vote_other_name"] = name
+
+    # Load trainings
+    user_data = load_data("users")
+    admin_id = str(update.message.from_user.id)
+    team = user_data.get(admin_id, {}).get("team", "Both")
+
+    trainings = get_next_week_trainings(team)
+    today = datetime.datetime.today().date()
+    current_hour = datetime.datetime.now().hour
+    filtered = []
+
+    for t in trainings:
+        start_voting = t.get("start_voting")
+        if t["type"] == "one-time":
+            try:
+                start_date = datetime.datetime.strptime(start_voting, "%d.%m.%Y").date()
+                if (start_date < today or (start_date == today and current_hour >= 18)):
+                    tid = f"{t['date']}_{t['start_hour']:02d}:{t['start_min']:02d}"
+                    filtered.append((tid, t))
+            except:
+                continue
+        else:
+            if isinstance(start_voting, int) and (
+                start_voting < today.weekday() or (start_voting == today.weekday() and current_hour >= 18)
+            ):
+                tid = f"const_{t['weekday']}_{t['start_hour']:02d}:{t['start_min']:02d}"
+                filtered.append((tid, t))
+
+    if not filtered:
+        await update.message.reply_text("Немає тренувань для голосування.")
+        return ConversationHandler.END
+
+    context.user_data["vote_other_trainings"] = filtered
+
+    keyboard = [
+        [InlineKeyboardButton(
+            f"{t['date'].strftime('%d.%m.%Y') if t['type'] == 'one-time' else WEEKDAYS[t['weekday']]} {t['start_hour']:02d}:{t['start_min']:02d}",
+            callback_data=f"vote_other_{i}"
+        )] for i, (_, t) in enumerate(filtered)
+    ]
+
+    await update.message.reply_text(
+        "Оберіть тренування:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+    return VOTE_OTHER_SELECT
+
+
+async def handle_vote_other_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    idx = int(query.data.replace("vote_other_", ""))
+    selected = context.user_data.get("vote_other_trainings", [])[idx]
+    training_id, _ = selected
+    context.user_data["vote_other_training_id"] = training_id
+
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ Так", callback_data="vote_other_cast_yes"),
+            InlineKeyboardButton("❌ Ні", callback_data="vote_other_cast_no")
+        ]
+    ]
+
+    await query.edit_message_text(
+        f"Ви обрали тренування: {format_training_id(training_id)}\n"
+        "Який голос ви хочете поставити?",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+async def handle_vote_other_cast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    vote_choice = "yes" if "yes" in query.data else "no"
+    name = context.user_data["vote_other_name"]
+    training_id = context.user_data["vote_other_training_id"]
+    user_id = context.user_data["vote_other_id"]
+
+    votes = load_data("votes", DEFAULT_VOTES_STRUCTURE)
+    if training_id not in votes["votes"]:
+        votes["votes"][training_id] = {}
+
+    votes["votes"][training_id][user_id] = {"name": name, "vote": vote_choice}
+    save_data(votes, "votes")
+
+    vote_text = "БУДУ" if vote_choice == "yes" else "НЕ БУДУ"
+    await query.edit_message_text(f"✅ Голос за '{name}' збережено як '{vote_text}' на тренування {format_training_id(training_id)}.")
+
+
 
 
 def generate_training_id(training):
@@ -205,15 +377,37 @@ async def view_votes(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data["view_votes_options"] = list(active_votes.keys())
 
-    keyboard = [
-        [
-            InlineKeyboardButton(
-                f"{format_training_id(tid)}",
-                callback_data=f"view_votes_{i}"
-            )
-        ]
-        for i, tid in enumerate(context.user_data["view_votes_options"])
-    ]
+    from trainings import load_data as load_trainings
+
+    # Load trainings for team info
+    one_time = load_trainings("one_time_trainings", {})
+    constant = load_trainings("constant_trainings", {})
+
+    def get_training_team_label(training_id):
+        if training_id.startswith("const_"):
+            for tid, tr in constant.items():
+                tr_id = f"const_{tr['weekday']}_{tr['start_hour']:02d}:{tr['start_min']:02d}"
+                if tr_id == training_id:
+                    return tr.get("team", "Both")
+        else:
+            for tid, tr in one_time.items():
+                tr_id = f"{tr['date']}_{tr['start_hour']:02d}:{tr['start_min']:02d}"
+                if tr_id == training_id:
+                    return tr.get("team", "Both")
+        return "Both"
+
+    def format_team(team):
+        if team == "Male":
+            return " (чоловіча команда)"
+        elif team == "Female":
+            return " (жіноча команда)"
+        return ""
+
+    keyboard = []
+    for i, tid in enumerate(context.user_data["view_votes_options"]):
+        team = get_training_team_label(tid)
+        label = format_training_id(tid) + format_team(team)
+        keyboard.append([InlineKeyboardButton(label, callback_data=f"view_votes_{i}")])
 
     await update.message.reply_text(
         "Оберіть тренування для перегляду результатів голосування:",
@@ -263,7 +457,7 @@ async def handle_view_votes_selection(update: Update, context: ContextTypes.DEFA
         return
 
     training_id = vote_keys[idx]
-    votes = load_data('votes', DEFAULT_VOTES_STRUCTURE)
+    votes = load_data('votes', {"votes": {}})
     voters = votes["votes"].get(training_id, {})
 
     yes_list = [v["name"] for v in voters.values() if v["vote"] == "yes"]
@@ -271,9 +465,9 @@ async def handle_view_votes_selection(update: Update, context: ContextTypes.DEFA
 
     label = format_training_id(training_id)
 
-    # Кількість людей можливо
-    message = f"📅 Тренування: {label}\n"
-    message += "Буде:\n" + ("\n".join(yes_list) if yes_list else "Ніхто") + "\n"
-    message += "Не буде:\n" + ("\n".join(no_list) if no_list else "Ніхто") + "\n"
+    message = f"📅 Тренування: {label}\n\n"
+    message += f"✅ Буде ({len(yes_list)}):\n" + ("\n".join(yes_list) if yes_list else "Ніхто") + "\n\n"
+    message += f"❌ Не буде ({len(no_list)}):\n" + ("\n".join(no_list) if no_list else "Ніхто")
 
     await query.edit_message_text(message)
+

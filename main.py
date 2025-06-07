@@ -8,10 +8,14 @@ from trainings import create_training_add_handler, add_training, next_training, 
     reset_today_constant_trainings_status
 from registration import create_registration_handler
 from notifier import check_voting_and_notify, start_voting
-from voting import view_votes, vote_training, handle_vote, handle_training_vote_selection, handle_view_votes_selection
+from voting import *
 from commands import send_message_command, handle_send_message_team_selection, handle_send_message_input
 import os
 
+states = {
+    VOTE_OTHER_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, vote_other_name)],
+    VOTE_OTHER_SELECT: [CallbackQueryHandler(handle_vote_other_selection, pattern=r"^vote_other_\d+")],
+},
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -85,6 +89,11 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("pay_debt", pay_debt))
     app.add_handler(CallbackQueryHandler(handle_pay_debt_selection, pattern=r"^paydebt_select_\d+$"))
     app.add_handler(CallbackQueryHandler(handle_pay_debt_confirmation, pattern=r"^paydebt_confirm_yes$"))
+    app.add_handler(CommandHandler("view_payments", view_payments))
+    app.add_handler(CallbackQueryHandler(handle_view_payment_selection, pattern=r"^view_payment_\d+"))
+    app.add_handler(CallbackQueryHandler(handle_vote_other_cast, pattern=r"^vote_other_cast_(yes|no)$"))
+    app.add_handler(CommandHandler("unlock_training", unlock_training))
+    app.add_handler(CallbackQueryHandler(handle_unlock_selection, pattern=r"^unlock_training_\d+"))
 
     # app.add_handler(CommandHandler("next_game", next_game))
     # app.add_handler(CommandHandler("check_debt", check_debt))
