@@ -41,20 +41,40 @@ async def start_voting(app: Application):
 
 
 async def check_voting_and_notify(app: Application):
+    from datetime import datetime, timedelta
+
     users = load_data(REGISTRATION_FILE)
     today = datetime.today().date()
-    weekday = today.weekday()
 
     one_time_trainings = load_data(ONE_TIME_TRAININGS_FILE, {})
     constant_trainings = load_data(CONSTANT_TRAININGS_FILE, {})
     votes_data = load_data(VOTES_FILE, {"votes": {}})
 
     for training_id, training in one_time_trainings.items():
-        training_date = datetime.strptime(training["date"], "%d.%m.%Y").date()
-        if (training_date - today).days == 1:
+        try:
+            training_date = datetime.strptime(training["date"], "%d.%m.%Y").date()
+        except Exception:
+            continue
+
+        if (training_date - today).days == 2:
             await send_voting_reminder(app, training, training_id, users, votes_data, "one-time")
+
     for training_id, training in constant_trainings.items():
-        if training.get("weekday") == weekday:
+        if "weekday" not in training:
+            continue
+
+        training_weekday = training["weekday"]
+        training_time = datetime(
+            year=today.year, month=today.month, day=today.day,
+            hour=training["start_hour"], minute=training["start_min"]
+        )
+        # Find the date of the next occurrence of the training weekday
+        days_ahead = (training_weekday - today.weekday()) % 7
+        if days_ahead == 0:
+            days_ahead = 7
+        training_date = today + timedelta(days=days_ahead)
+
+        if (training_date - today).days == 2:
             await send_voting_reminder(app, training, training_id, users, votes_data, "constant")
 
 
@@ -108,7 +128,7 @@ async def send_voting_reminder(app, training, training_id, users, votes_data, tr
 
     message = (
         f"⏰ Нагадування про голосування!\n"
-        f"Сьогодні закінчується голосування на тренування "
+        f"Відбудеться тренування "
         f"{'в ' if training_type == 'constant' else ''}{date_str} "
         f"з {training['start_hour']:02d}:{training['start_min']:02d} "
         f"до {training['end_hour']:02d}:{training['end_min']:02d}.\n"
