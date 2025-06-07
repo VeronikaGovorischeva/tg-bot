@@ -3,8 +3,8 @@ from telegram.ext import ContextTypes
 from data import load_data, save_data
 from validation import ADMIN_IDS
 
-TRAINING_COST = 1750
-CARD_NUMBER = "5375 4141 0273 8014"
+TRAINING_COST = 2000
+CARD_NUMBER = "5457 0825 2151 6794"
 
 async def charge_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     one_time_trainings = load_data("one_time_trainings", {})
@@ -75,7 +75,18 @@ async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_
         await query.edit_message_text("Ніхто не проголосував 'так' за це тренування.")
         return
 
-    per_person = round(TRAINING_COST / len(yes_voters))
+    # Check if this is the specific constant training that should cost 1750 UAH
+    is_fixed_cost = (
+            ttype == "constant" and
+            training.get("weekday") == 4 and
+            training.get("start_hour") == 19 and
+            training.get("start_min") == 30
+    )
+
+    if is_fixed_cost:
+        per_person = round(1750 / len(yes_voters))
+    else:
+        per_person = round(TRAINING_COST / len(yes_voters))
     training_datetime = (
         f"{training['date']} {training['start_hour']:02d}:{training['start_min']:02d}"
         if ttype == "one_time"
