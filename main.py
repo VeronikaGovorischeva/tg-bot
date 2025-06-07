@@ -81,7 +81,7 @@ if __name__ == "__main__":
     app.add_handler(CallbackQueryHandler(handle_training_vote_selection, pattern=r"^training_vote_\d+"))
     app.add_handler(CommandHandler("send_message", send_message_command))
     app.add_handler(CallbackQueryHandler(handle_send_message_team_selection, pattern=r"^send_team_"))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_send_message_input))
+
 
     app.add_handler(CommandHandler("charge_all", charge_all))
     app.add_handler(CallbackQueryHandler(handle_payment_confirmation, pattern=r"^paid_yes_.*"))
@@ -105,6 +105,7 @@ if __name__ == "__main__":
 
     # Final step after training is selected
     app.add_handler(CallbackQueryHandler(handle_vote_other_cast, pattern=r"^vote_other_cast_(yes|no)$"))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_send_message_input))
 
     # app.add_handler(CommandHandler("next_game", next_game))
     # app.add_handler(CommandHandler("check_debt", check_debt))
