@@ -1,4 +1,3 @@
-import asyncio
 from datetime import datetime
 from data import load_data
 from telegram.ext import Application

@@ -14,16 +14,10 @@ import os
 
 from voting import vote_for, vote_other_name, handle_vote_other_selection, handle_vote_other_cast
 
-
-
-
 from apscheduler.schedulers.background import BackgroundScheduler
 
-chillnttestbot_token = "7640419427:AAHUciixP3FyY6PLahICwer6ybFLwQRqucg"
-idontknownamesbot_token = "8010698609:AAGZhl3Cfqh_YRaV1u9ROm0xySNUgLIzIC0"
-megachillguybot_token = "8158067169:AAGQaLETvllC5HR4byyadJqQeEwsOQN0IyE"
-bot_username = "ChillNtTestBot"
 BOT_TOKEN = os.getenv("NEW_TOKEN")
+
 
 async def error(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     print(f"Update {update} caused error {context.error}")
@@ -82,7 +76,6 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("send_message", send_message_command))
     app.add_handler(CallbackQueryHandler(handle_send_message_team_selection, pattern=r"^send_team_"))
 
-
     app.add_handler(CommandHandler("charge_all", charge_all))
     app.add_handler(CallbackQueryHandler(handle_payment_confirmation, pattern=r"^paid_yes_.*"))
     app.add_handler(CallbackQueryHandler(handle_charge_selection, pattern=r"^charge_select_\d+"))
@@ -117,8 +110,10 @@ if __name__ == "__main__":
 
     scheduler = BackgroundScheduler()
     loop = asyncio.get_event_loop()
-    scheduler.add_job(lambda: loop.call_soon_threadsafe(lambda: asyncio.create_task(start_voting(app))), 'cron', hour=15, minute=0)
-    scheduler.add_job(lambda: loop.call_soon_threadsafe(lambda: asyncio.create_task(check_voting_and_notify(app))),'cron', hour=16, minute=0)
+    scheduler.add_job(lambda: loop.call_soon_threadsafe(lambda: asyncio.create_task(start_voting(app))), 'cron',
+                      hour=15, minute=0)
+    scheduler.add_job(lambda: loop.call_soon_threadsafe(lambda: asyncio.create_task(check_voting_and_notify(app))),
+                      'cron', hour=16, minute=0)
     scheduler.add_job(reset_today_constant_trainings_status, 'cron', hour=22, minute=0)
 
     scheduler.start()

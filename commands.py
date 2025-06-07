@@ -49,7 +49,6 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 from trainings import get_next_training
 from games import *
-from config import *
 from data import *
 
 # async def next_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

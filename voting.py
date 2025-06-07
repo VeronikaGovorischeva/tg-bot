@@ -1,17 +1,11 @@
-import json
-import os
 import datetime
-from pymongo import MongoClient
-
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
+from telegram.ext import ContextTypes, ConversationHandler
 from data import load_data, save_data
 from trainings import get_next_week_trainings
-from telegram.ext import ConversationHandler
-from validation import is_authorized
 import uuid
 from validation import is_authorized
-from telegram.ext import CommandHandler
+
 
 async def unlock_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update.message.from_user.id):
@@ -50,6 +44,7 @@ async def unlock_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
+
 async def handle_unlock_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -81,8 +76,8 @@ VOTES_FILE = "training_votes"
 DEFAULT_VOTES_STRUCTURE = {"votes": {}}
 VOTES_LIMIT = 14
 
-
 VOTE_OTHER_NAME, VOTE_OTHER_SELECT = range(2)
+
 
 async def vote_for(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update.message.from_user.id):
@@ -120,7 +115,7 @@ async def vote_other_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 continue
         else:
             if isinstance(start_voting, int) and (
-                start_voting < today.weekday() or (start_voting == today.weekday() and current_hour >= 18)
+                    start_voting < today.weekday() or (start_voting == today.weekday() and current_hour >= 18)
             ):
                 tid = f"const_{t['weekday']}_{t['start_hour']:02d}:{t['start_min']:02d}"
                 filtered.append((tid, t))
@@ -166,6 +161,8 @@ async def handle_vote_other_selection(update: Update, context: ContextTypes.DEFA
         "Який голос ви хочете поставити?",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
+
+
 async def handle_vote_other_cast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -183,9 +180,8 @@ async def handle_vote_other_cast(update: Update, context: ContextTypes.DEFAULT_T
     save_data(votes, "votes")
 
     vote_text = "БУДУ" if vote_choice == "yes" else "НЕ БУДУ"
-    await query.edit_message_text(f"✅ Голос за '{name}' збережено як '{vote_text}' на тренування {format_training_id(training_id)}.")
-
-
+    await query.edit_message_text(
+        f"✅ Голос за '{name}' збережено як '{vote_text}' на тренування {format_training_id(training_id)}.")
 
 
 def generate_training_id(training):
@@ -425,7 +421,6 @@ def is_vote_active(vote_id, today):
         return False
 
 
-
 # maybe change a bit
 def format_training_id(tid: str) -> str:
     if tid.startswith("Понеділок") or tid.startswith("const_"):
@@ -470,4 +465,3 @@ async def handle_view_votes_selection(update: Update, context: ContextTypes.DEFA
     message += f"❌ Не буде ({len(no_list)}):\n" + ("\n".join(no_list) if no_list else "Ніхто")
 
     await query.edit_message_text(message)
-
