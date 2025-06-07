@@ -78,8 +78,8 @@ async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_
     # Check if this is the specific constant training that should cost 1750 UAH
     is_fixed_cost = (
             ttype == "constant" and
-            training.get("weekday") == 4 and
-            training.get("start_hour") == 19 and
+            training.get("weekday") == 0 and
+            training.get("start_hour") == 17 and
             training.get("start_min") == 30
     )
 
