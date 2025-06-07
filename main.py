@@ -12,10 +12,10 @@ from voting import *
 from commands import send_message_command, handle_send_message_team_selection, handle_send_message_input
 import os
 
-states = {
-    VOTE_OTHER_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, vote_other_name)],
-    VOTE_OTHER_SELECT: [CallbackQueryHandler(handle_vote_other_selection, pattern=r"^vote_other_\d+")],
-},
+from voting import vote_for, vote_other_name, handle_vote_other_selection, handle_vote_other_cast
+
+
+
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -94,6 +94,17 @@ if __name__ == "__main__":
     app.add_handler(CallbackQueryHandler(handle_vote_other_cast, pattern=r"^vote_other_cast_(yes|no)$"))
     app.add_handler(CommandHandler("unlock_training", unlock_training))
     app.add_handler(CallbackQueryHandler(handle_unlock_selection, pattern=r"^unlock_training_\d+"))
+    app.add_handler(ConversationHandler(
+        entry_points=[CommandHandler("vote_for", vote_for)],
+        states={
+            VOTE_OTHER_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, vote_other_name)],
+            VOTE_OTHER_SELECT: [CallbackQueryHandler(handle_vote_other_selection, pattern=r"^vote_other_\d+")]
+        },
+        fallbacks=[]
+    ))
+
+    # Final step after training is selected
+    app.add_handler(CallbackQueryHandler(handle_vote_other_cast, pattern=r"^vote_other_cast_(yes|no)$"))
 
     # app.add_handler(CommandHandler("next_game", next_game))
     # app.add_handler(CommandHandler("check_debt", check_debt))
