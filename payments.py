@@ -80,7 +80,7 @@ async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_
             ttype == "constant" and
             training.get("weekday") == 0 and
             training.get("start_hour") == 17 and
-            training.get("start_min") == 30
+            training.get("start_min") == 00
     )
 
     if is_fixed_cost:
