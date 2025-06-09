@@ -186,7 +186,7 @@ class RegistrationManager:
             str: A formatted string listing all available commands.
         """
         commands = [f"/{cmd}" for cmd in self.commands.keys()]
-        return f"Використовуй команди {' '.join(commands)} щоб дізнатися інфу про наступне тренування та наступну гру."
+        return f"Використовуй команди з меню щоб дізнатися інфу про наступне тренування та наступну гру."
 
     def load_user_profile(self, user_id: str) -> Optional[UserProfile]:
         """
