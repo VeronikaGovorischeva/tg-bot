@@ -7,7 +7,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 REGISTRATION_FILE = "users"
 ONE_TIME_TRAININGS_FILE = "one_time_trainings"
 CONSTANT_TRAININGS_FILE = "constant_trainings"
-VOTES_FILE = "training_votes"
+VOTES_FILE = "votes"
 WEEKDAYS = ['понеділок', 'вівторок', 'середу', 'четвер', "п'ятницю", 'суботу', 'неділю']
 VOTES_LIMIT = 14
 
@@ -144,7 +144,7 @@ async def send_voting_reminder(app, training, training_id, users, votes_data, tr
     training_team = training.get("team")
     for uid, info in users.items():
         # Надсилаємо нагадування тільки тим, хто ще не проголосував
-        if (training_team in [info.get("team"), "Both"]) and (uid not in voted_users):
+        if (training_team in [info.get("team"), "Both"]) and (str(uid) not in voted_users):
             try:
                 await app.bot.send_message(
                     chat_id=int(uid),
