@@ -203,6 +203,17 @@ async def vote_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id not in user_data or "team" not in user_data[user_id]:
         await update.message.reply_text("Будь ласка, завершіть реєстрацію перед голосуванням.")
         return
+    # Check for unpaid payments
+    payments = load_data("payments", {})
+    unpaid = [p for p in payments.values() if p["user_id"] == user_id and not p.get("paid", False)]
+
+    if len(unpaid) >= 2:
+        await update.message.reply_text(
+            "❌ У тебе два або більше неоплачених тренувань. Спочатку погаси борг через /pay_debt.")
+        return
+    elif len(unpaid) == 1:
+        await update.message.reply_text(
+            "⚠️ У тебе є неоплачене тренування. Будь ласка, погаси борг через /pay_debt якнайшвидше.")
 
     team = user_data[user_id]["team"]
     today = datetime.datetime.today().date()
