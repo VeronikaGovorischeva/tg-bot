@@ -230,12 +230,8 @@ async def vote_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             if not isinstance(start_voting, int):
                 continue
-            weekday_condition = (
-                    start_voting < today.weekday() or
-                    (start_voting == today.weekday() and current_hour >= 18)
-            )
-
-            if weekday_condition:
+            voting_started = ((today.weekday() - start_voting) % 7) <= 6
+            if voting_started:
                 date_str = training['date'].strftime("%d.%m.%Y") if isinstance(training['date'], datetime.date) else \
                     training['date']
                 training_id = generate_training_id(training)
