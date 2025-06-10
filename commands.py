@@ -34,16 +34,26 @@ async def handle_send_message_input(update: Update, context: ContextTypes.DEFAUL
     message_text = update.message.text
     users = load_data("users")
 
+    # Отримати юзернейм автора
+    sender_username = update.message.from_user.username
+    if sender_username:
+        footer = f"\n\n👤 Повідомлення надіслав(ла): @{sender_username}"
+    else:
+        footer = f"\n\n👤 Повідомлення надіслав(ла): {update.message.from_user.first_name}"
+
+    full_message = f"{message_text}{footer}"
+
     count = 0
     for uid, info in users.items():
         if team in [info.get("team"), "Both"]:
             try:
-                await context.bot.send_message(chat_id=int(uid), text=message_text)
+                await context.bot.send_message(chat_id=int(uid), text=full_message)
                 count += 1
             except Exception as e:
                 print(f"❌ Не вдалося надіслати повідомлення {uid}: {e}")
 
     await update.message.reply_text(f"✅ Повідомлення надіслано {count} користувачам.")
+
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
