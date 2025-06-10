@@ -135,14 +135,15 @@ async def handle_payment_confirmation(update: Update, context: ContextTypes.DEFA
     query = update.callback_query
     await query.answer()
 
-    parts = query.data.split("_")
-    training_id, user_id = parts[2], parts[3]
+    payload = query.data[len("paid_yes_"):]
+    # Розбиваємо з кінця, бо user_id завжди останній
+    training_id, user_id = payload.rsplit("_", 1)
 
     payments = load_data("payments", {})
     key = f"{training_id}_{user_id}"
 
     if key not in payments:
-        await query.edit_message_text("⚠️ Помилка: запис про платіж не знайдено.")
+        await query.edit_message_text("⚠️ Помилка: запис про платіж не знайдено. Використай команду /pay_debt для підтвердження")
         return
 
     payments[key]["paid"] = True
