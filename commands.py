@@ -4,6 +4,7 @@ from data import load_data
 
 SEND_MESSAGE_STATE = {}
 
+
 async def send_message_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = InlineKeyboardMarkup([
         [
@@ -22,11 +23,15 @@ async def handle_send_message_team_selection(update: Update, context: ContextTyp
     team = query.data.replace("send_team_", "")
     SEND_MESSAGE_STATE[query.from_user.id] = team
 
-    await query.edit_message_text(f"Ви обрали: {team} команда.\n\nТепер надішліть текст повідомлення у наступному повідомленні.")
+    await query.edit_message_text(
+        f"Ви обрали: {team} команда.\n\nТепер надішліть текст повідомлення у наступному повідомленні.")
 
 
 async def handle_send_message_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
+    if update.message.text == "🤡" or update.message.text=="🖕":
+        await update.message.reply_text("🤡")
+        return
     if user_id not in SEND_MESSAGE_STATE:
         return  # Not in send_message flow
 
