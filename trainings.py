@@ -542,7 +542,7 @@ from data import load_data, save_data
 def reset_today_constant_trainings_status():
     import datetime
     now = datetime.datetime.now()
-    today_weekday = now.weekday()
+    yesterday_weekday = now.weekday() - 1
     current_time = now.time()
 
     constant_trainings = load_data("constant_trainings", {})
@@ -550,7 +550,7 @@ def reset_today_constant_trainings_status():
     updated = False
 
     for tid, training in constant_trainings.items():
-        if training.get("weekday") != today_weekday:
+        if training.get("weekday") != yesterday_weekday:
             continue
 
         end_hour = training.get("end_hour", 0)
