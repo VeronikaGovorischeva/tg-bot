@@ -1,6 +1,7 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from data import load_data
+from validation import ADMIN_IDS
 
 SEND_MESSAGE_STATE = {}
 
@@ -58,6 +59,42 @@ async def handle_send_message_input(update: Update, context: ContextTypes.DEFAUL
                 print(f"❌ Не вдалося надіслати повідомлення {uid}: {e}")
 
     await update.message.reply_text(f"✅ Повідомлення надіслано {count} користувачам.")
+async def notify_debtors(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    if user_id not in ADMIN_IDS:
+        await update.message.reply_text("⛔ У вас немає прав для надсилання повідомлень боржникам.")
+        return
+
+    payments = load_data("payments", {})
+    users = load_data("users", {})
+
+    # Group debts by user
+    debts_by_user = {}
+    for p in payments.values():
+        if not p.get("paid", False):
+            uid = p["user_id"]
+            debts_by_user.setdefault(uid, []).append(p)
+
+    notified_count = 0
+
+    for uid, debts in debts_by_user.items():
+        lines = []
+        for d in debts:
+            lines.append(f"• {d['training_datetime']}: {d['amount']} грн")
+
+        message = (
+            "📢 У тебе є неоплачені тренування:\n\n" +
+            "\n".join(lines) +
+            "\n\nБудь ласка, використай команду /pay_debt щоб підтвердити оплату або оплатити через Telegram."
+        )
+
+        try:
+            await context.bot.send_message(chat_id=int(uid), text=message)
+            notified_count += 1
+        except Exception as e:
+            print(f"❌ Не вдалося надіслати повідомлення до {uid}: {e}")
+
+    await update.message.reply_text(f"✅ Сповіщення надіслано {notified_count} боржникам.")
 
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup

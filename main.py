@@ -9,7 +9,7 @@ from trainings import create_training_add_handler, add_training, next_training, 
 from registration import create_registration_handler
 from notifier import check_voting_and_notify, start_voting
 from voting import *
-from commands import send_message_command, handle_send_message_team_selection, handle_send_message_input
+from commands import send_message_command, handle_send_message_team_selection, handle_send_message_input, notify_debtors
 import os
 
 from voting import vote_for, vote_other_name, handle_vote_other_selection, handle_vote_other_cast
@@ -94,6 +94,7 @@ if __name__ == "__main__":
     app.add_handler(CallbackQueryHandler(handle_vote_other_cast, pattern=r"^vote_other_cast_(yes|no)$"))
     app.add_handler(CommandHandler("unlock_training", unlock_training))
     app.add_handler(CallbackQueryHandler(handle_unlock_selection, pattern=r"^unlock_training_\d+"))
+    app.add_handler(CommandHandler("notify_debtors", notify_debtors))
     app.add_handler(ConversationHandler(
         entry_points=[CommandHandler("vote_for", vote_for)],
         states={
