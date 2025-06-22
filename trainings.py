@@ -542,7 +542,8 @@ from data import load_data, save_data
 def reset_today_constant_trainings_status():
     import datetime
     now = datetime.datetime.now()
-    yesterday_weekday = now.weekday() - 1
+    today = now.weekday()
+    yesterday = now - datetime.timedelta(days=1)
     current_time = now.time()
 
     constant_trainings = load_data("constant_trainings", {})
@@ -550,7 +551,7 @@ def reset_today_constant_trainings_status():
     updated = False
 
     for tid, training in constant_trainings.items():
-        if training.get("weekday") != yesterday_weekday:
+        if training.get("weekday") != today:
             continue
 
         end_hour = training.get("end_hour", 0)
@@ -558,12 +559,12 @@ def reset_today_constant_trainings_status():
         training_end_time = datetime.time(hour=end_hour, minute=end_min)
 
         if current_time >= training_end_time:
-            # Reset status if not already
+            # Скидаємо статус
             if training.get("status") != "not charged":
                 training["status"] = "not charged"
                 updated = True
 
-            # Delete votes
+        if training.get("weekday") == yesterday:
             vote_id = f"const_{training['weekday']}_{training['start_hour']:02d}:{training['start_min']:02d}"
             if vote_id in votes["votes"]:
                 del votes["votes"][vote_id]
@@ -572,7 +573,5 @@ def reset_today_constant_trainings_status():
     if updated:
         save_data(constant_trainings, "constant_trainings")
         save_data(votes, "votes")
-        print("✅ Reset status and cleared votes for ended constant trainings.")
-    else:
-        print("ℹ️ No constant trainings ended yet for vote cleanup.")
+        print("✅ Reset status and cleared votes for finished constant trainings.")
 
