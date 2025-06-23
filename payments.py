@@ -5,7 +5,7 @@ from validation import ADMIN_IDS
 from validation import is_authorized
 
 
-TRAINING_COST = 1750
+TRAINING_COST = 2000
 CARD_NUMBER = "5457 0825 2151 6794"
 
 async def charge_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
