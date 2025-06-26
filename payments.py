@@ -8,6 +8,75 @@ from telegram.ext import ConversationHandler
 ENTER_COST = range(1)
 TRAINING_COST = 1750
 CARD_NUMBER = "5457 0825 2151 6794"
+async def handle_enter_cost(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        total_cost = int(update.message.text.strip())
+    except ValueError:
+        await update.message.reply_text("Будь ласка, введіть коректне число.")
+        return ENTER_COST
+
+    tid, ttype, label = context.user_data.get("selected_training")
+    trainings = load_data("one_time_trainings" if ttype == "one_time" else "constant_trainings")
+    training = trainings.get(tid)
+    if not training:
+        await update.message.reply_text("Тренування не знайдено.")
+        return ConversationHandler.END
+
+    votes = load_data("votes", {"votes": {}})["votes"]
+    training_id = (
+        f"{training['date']}_{training['start_hour']:02d}:{training['start_min']:02d}"
+        if ttype == "one_time"
+        else f"const_{training['weekday']}_{training['start_hour']:02d}:{training['start_min']:02d}"
+    )
+
+    if training_id not in votes:
+        await update.message.reply_text("Ніхто не голосував за це тренування.")
+        return ConversationHandler.END
+
+    yes_voters = [uid for uid, v in votes[training_id].items() if v["vote"] == "yes"]
+    if not yes_voters:
+        await update.message.reply_text("Ніхто не проголосував 'так' за це тренування.")
+        return ConversationHandler.END
+
+    per_person = round(total_cost / len(yes_voters))
+    training_datetime = (
+        f"{training['date']} {training['start_hour']:02d}:{training['start_min']:02d}"
+        if ttype == "one_time"
+        else f"{label}"
+    )
+
+    payments = load_data("payments", {})
+    for uid in yes_voters:
+        new_entry = {
+            "user_id": uid,
+            "training_id": training_id,
+            "amount": per_person,
+            "training_datetime": training_datetime,
+            "card": CARD_NUMBER,
+            "paid": False
+        }
+        payments[f"{training_id}_{uid}"] = new_entry
+
+        keyboard = [[InlineKeyboardButton("✅ Я оплатив(ла)", callback_data=f"paid_yes_{training_id}_{uid}")]]
+        try:
+            await update.message.bot.send_message(
+                chat_id=int(uid),
+                text=(f"💳 Ти відвідав(-ла) тренування {training_datetime}.\n"
+                      f"Сума до сплати: {per_person} грн\n"
+                      f"Карта для оплати: {CARD_NUMBER}\n\n"
+                      f"Натисни кнопку нижче, коли оплатиш:"),
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        except Exception as e:
+            print(f"❌ Помилка надсилання повідомлення для {uid}: {e}")
+
+    save_data(payments, "payments")
+    trainings[tid]["status"] = "charged"
+    save_data(trainings, "one_time_trainings" if ttype == "one_time" else "constant_trainings")
+
+    await update.message.reply_text("✅ Повідомлення з інструкцією надіслано всім, хто голосував 'так'.")
+    return ConversationHandler.END
+
 
 async def charge_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     one_time_trainings = load_data("one_time_trainings", {})
