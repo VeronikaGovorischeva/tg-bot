@@ -103,6 +103,11 @@ if __name__ == "__main__":
         },
         fallbacks=[]
     ))
+    app.add_handler(ConversationHandler(
+        entry_points=[CallbackQueryHandler(handle_charge_selection, pattern=r"^charge_select_\d+")],
+        states={ENTER_COST: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_enter_cost)]},
+        fallbacks=[]
+    ))
 
     # Final step after training is selected
     app.add_handler(CallbackQueryHandler(handle_vote_other_cast, pattern=r"^vote_other_cast_(yes|no)$"))
