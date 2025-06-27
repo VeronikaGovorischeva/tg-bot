@@ -7,7 +7,9 @@ import datetime
 from data import load_data, save_data
 from validation import is_authorized
 
-DATA_FILE="users"
+DATA_FILE = "users"
+
+
 class TrainingType(Enum):
     ONE_TIME = "training_onetime"
     RECURRING = "training_recurring"
@@ -233,7 +235,6 @@ async def training_start_voting(update: Update, context: ContextTypes.DEFAULT_TY
         await save_training_data(update, context)
         await query.edit_message_text(MESSAGES["training_saved"])
         return ConversationHandler.END
-
 
 
 async def save_training_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -464,6 +465,7 @@ async def week_trainings(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(message)
 
+
 def format_next_training_message(user_id: str) -> str:
     user_data = load_data("users")
 
@@ -479,7 +481,8 @@ def format_next_training_message(user_id: str) -> str:
     date_str = training_info["date"].strftime("%d.%m.%Y")
     start_time = f"{training_info['start_hour']:02d}:{training_info['start_min']:02d}"
     end_time = f"{training_info['end_hour']:02d}:{training_info['end_min']:02d}"
-    team_str = f" для {'чоловічої' if training_info['team'] == 'Male' else 'жіночої'} команди" if training_info["team"] != "Both" else " для обох команд"
+    team_str = f" для {'чоловічої' if training_info['team'] == 'Male' else 'жіночої'} команди" if training_info[
+                                                                                                      "team"] != "Both" else " для обох команд"
     coach_str = " з тренером" if training_info["with_coach"] else ""
 
     weekday_names = ['понеділок', 'вівторок', 'середу', 'четвер', "п'ятницю", 'суботу', 'неділю']
@@ -495,6 +498,8 @@ def format_next_training_message(user_id: str) -> str:
     return (
         f"Наступне тренування{team_str}{coach_str} {day_text} в {weekday_name}, {date_str} з {start_time} до {end_time}."
     )
+
+
 async def next_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Handles the /next_training command, fetching and formatting the next training session.
@@ -536,14 +541,16 @@ async def last_training(update, context: ContextTypes.DEFAULT_TYPE):
         message = "Немає записаних тренувань."
     await update.message.reply_text(message)
 
+
 import datetime
 from data import load_data, save_data
+
 
 def reset_today_constant_trainings_status():
     import datetime
     now = datetime.datetime.now()
     today = now.weekday()
-    yesterday = now - datetime.timedelta(days=1)
+    yesterday = (now - datetime.timedelta(days=1)).weekday()
     current_time = now.time()
 
     constant_trainings = load_data("constant_trainings", {})
@@ -574,4 +581,3 @@ def reset_today_constant_trainings_status():
         save_data(constant_trainings, "constant_trainings")
         save_data(votes, "votes")
         print("✅ Reset status and cleared votes for finished constant trainings.")
-
