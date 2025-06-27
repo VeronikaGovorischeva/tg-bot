@@ -125,7 +125,7 @@ if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     scheduler.add_job(lambda: loop.call_soon_threadsafe(lambda: asyncio.create_task(start_voting(app))), 'cron', hour=15, minute=0)
     scheduler.add_job(lambda: loop.call_soon_threadsafe(lambda: asyncio.create_task(check_voting_and_notify(app))),'cron', hour=16, minute=0)
-    scheduler.add_job(reset_today_constant_trainings_status, 'interval', minutes=10)
+    scheduler.add_job(lambda: loop.call_soon_threadsafe(lambda: asyncio.create_task(reset_today_constant_trainings_status())),'cron', hour=19, minute=0)
 
     scheduler.start()
 
