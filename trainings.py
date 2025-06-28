@@ -409,6 +409,7 @@ def get_next_week_trainings(team=None):
                     "end_min": training["end_min"],
                     "team": training["team"],
                     "with_coach": training["with_coach"],
+                    "description": training.get("description", ""),
                     "type": "constant"
                 })
 
@@ -430,6 +431,7 @@ def get_next_week_trainings(team=None):
                 "end_min": training["end_min"],
                 "team": training["team"],
                 "with_coach": training["with_coach"],
+                "description": training.get("description", ""),
                 "type": "one-time"
             })
 
