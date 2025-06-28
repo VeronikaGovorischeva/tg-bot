@@ -262,9 +262,10 @@ async def vote_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             date_str = WEEKDAYS[t["date"].weekday()]
         time_str = f"{t['start_hour']:02d}:{t['start_min']:02d}"
-        desc_str = f" ({t['description']})" if t.get("description") else ""
+        desc = t.get("description")
+        desc_str = f" ({desc})" if desc else ""
         keyboard.append(
-            [InlineKeyboardButton(f"{date_str} {time_str}{desc_str}", callback_data=f"training_vote_{idx}")])
+            [InlineKeyboardButton(f"{date_str} {time_str} {desc_str}", callback_data=f"training_vote_{idx}")])
 
     context.user_data["vote_options"] = filtered
 
