@@ -128,7 +128,7 @@ async def send_voting_reminder(app, training, training_id, users, votes_data, tr
 
     message = (
         f"⏰ Нагадування про голосування!\n"
-        f"Відбудеться тренування "
+        f"Відбудеться тренування ({training["description"]}) "
         f"{'в ' if training_type == 'constant' else ''}{date_str} "
         f"з {training['start_hour']:02d}:{training['start_min']:02d} "
         f"до {training['end_hour']:02d}:{training['end_min']:02d}.\n"

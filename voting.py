@@ -13,6 +13,7 @@ import uuid
 from validation import is_authorized
 from telegram.ext import CommandHandler
 
+
 async def unlock_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update.message.from_user.id):
         await update.message.reply_text("У вас немає прав для цієї команди.")
@@ -50,6 +51,7 @@ async def unlock_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
+
 async def handle_unlock_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -81,8 +83,8 @@ VOTES_FILE = "training_votes"
 DEFAULT_VOTES_STRUCTURE = {"votes": {}}
 VOTES_LIMIT = 14
 
-
 VOTE_OTHER_NAME, VOTE_OTHER_SELECT = range(2)
+
 
 async def vote_for(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update.message.from_user.id):
@@ -120,7 +122,7 @@ async def vote_other_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 continue
         else:
             if isinstance(start_voting, int) and (
-                start_voting < today.weekday() or (start_voting == today.weekday() and current_hour >= 18)
+                    start_voting < today.weekday() or (start_voting == today.weekday() and current_hour >= 18)
             ):
                 tid = f"const_{t['weekday']}_{t['start_hour']:02d}:{t['start_min']:02d}"
                 filtered.append((tid, t))
@@ -166,6 +168,8 @@ async def handle_vote_other_selection(update: Update, context: ContextTypes.DEFA
         "Який голос ви хочете поставити?",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
+
+
 async def handle_vote_other_cast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -183,9 +187,8 @@ async def handle_vote_other_cast(update: Update, context: ContextTypes.DEFAULT_T
     save_data(votes, "votes")
 
     vote_text = "БУДУ" if vote_choice == "yes" else "НЕ БУДУ"
-    await query.edit_message_text(f"✅ Голос за '{name}' збережено як '{vote_text}' на тренування {format_training_id(training_id)}.")
-
-
+    await query.edit_message_text(
+        f"✅ Голос за '{name}' збережено як '{vote_text}' на тренування {format_training_id(training_id)}.")
 
 
 def generate_training_id(training):
@@ -259,7 +262,9 @@ async def vote_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             date_str = WEEKDAYS[t["date"].weekday()]
         time_str = f"{t['start_hour']:02d}:{t['start_min']:02d}"
-        keyboard.append([InlineKeyboardButton(f"{date_str} {time_str}", callback_data=f"training_vote_{idx}")])
+        desc_str = f" ({t['description']})" if t.get("description") else ""
+        keyboard.append(
+            [InlineKeyboardButton(f"{date_str} {time_str}{desc_str}", callback_data=f"training_vote_{idx}")])
 
     context.user_data["vote_options"] = filtered
 
@@ -403,6 +408,19 @@ async def view_votes(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     return tr.get("team", "Both")
         return "Both"
 
+    def get_training_description(training_id):
+        if training_id.startswith("const_"):
+            for tid, tr in constant.items():
+                tr_id = f"const_{tr['weekday']}_{tr['start_hour']:02d}:{tr['start_min']:02d}"
+                if tr_id == training_id:
+                    return tr.get("description", "")
+        else:
+            for tid, tr in one_time.items():
+                tr_id = f"{tr['date']}_{tr['start_hour']:02d}:{tr['start_min']:02d}"
+                if tr_id == training_id:
+                    return tr.get("description", "")
+        return ""
+
     def format_team(team):
         if team == "Male":
             return " (чоловіча команда)"
@@ -413,7 +431,9 @@ async def view_votes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = []
     for i, tid in enumerate(context.user_data["view_votes_options"]):
         team = get_training_team_label(tid)
-        label = format_training_id(tid) + format_team(team)
+        description = get_training_description(tid)
+        desc_part = f" ({description})" if description else ""
+        label = format_training_id(tid) + format_team(team) + desc_part
         keyboard.append([InlineKeyboardButton(label, callback_data=f"view_votes_{i}")])
 
     await update.message.reply_text(
@@ -430,7 +450,6 @@ def is_vote_active(vote_id, today):
         return today <= date
     except Exception:
         return False
-
 
 
 # maybe change a bit
@@ -477,4 +496,3 @@ async def handle_view_votes_selection(update: Update, context: ContextTypes.DEFA
     message += f"❌ Не буде ({len(no_list)}):\n" + ("\n".join(no_list) if no_list else "Ніхто")
 
     await query.edit_message_text(message)
-
