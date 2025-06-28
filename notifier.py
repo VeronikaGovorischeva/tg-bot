@@ -86,9 +86,12 @@ async def open_training_voting(app, training, training_id, users, training_type)
     else:
         date_str = WEEKDAYS[training['weekday']]
 
+    description = training.get("description")
+    description_part = f" ({description})" if description else ""
+
     message = (
         f"🗳 Почалося голосування!\n"
-        f"Тренування {'в ' if training_type == 'constant' else ''}{date_str} "
+        f"Тренування {'в ' if training_type == 'constant' else ''}{date_str} {description_part} "
         f"з {training['start_hour']:02d}:{training['start_min']:02d} "
         f"до {training['end_hour']:02d}:{training['end_min']:02d}."
     )
@@ -126,9 +129,12 @@ async def send_voting_reminder(app, training, training_id, users, votes_data, tr
     votes = votes_data.get("votes", {}).get(vote_id, {})
     voted_users = set(str(uid) for uid in votes.keys())
 
+    description = training.get("description")
+    description_part = f" ({description})" if description else ""
+
     message = (
         f"⏰ Нагадування про голосування!\n"
-        f"Відбудеться тренування ({training["description"]}) "
+        f"Відбудеться тренування {description_part} "
         f"{'в ' if training_type == 'constant' else ''}{date_str} "
         f"з {training['start_hour']:02d}:{training['start_min']:02d} "
         f"до {training['end_hour']:02d}:{training['end_min']:02d}.\n"
