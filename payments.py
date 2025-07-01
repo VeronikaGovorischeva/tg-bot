@@ -6,7 +6,7 @@ from validation import is_authorized
 from telegram.ext import ConversationHandler
 
 ENTER_COST = range(1)
-TRAINING_COST = 1750
+TRAINING_COST = 1400
 CARD_NUMBER = "5457 0825 2151 6794"
 async def handle_enter_cost(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
