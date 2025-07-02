@@ -82,8 +82,17 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("send_message", send_message_command))
     app.add_handler(CallbackQueryHandler(handle_send_message_team_selection, pattern=r"^send_team_"))
 
+    charge_handler = ConversationHandler(
+        entry_points=[CommandHandler("charge_all", charge_all)],
+        states={
+            ENTER_COST: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_enter_cost)],
+        },
+        fallbacks=[],
+        allow_reentry=True
+    )
 
-    app.add_handler(CommandHandler("charge_all", charge_all))
+    app.add_handler(charge_handler)
+    app.add_handler(CallbackQueryHandler(handle_charge_selection, pattern=r"^charge_select_\d+"))
     app.add_handler(CallbackQueryHandler(handle_payment_confirmation, pattern=r"^paid_yes_.*"))
     app.add_handler(CommandHandler("pay_debt", pay_debt))
     app.add_handler(CallbackQueryHandler(handle_pay_debt_selection, pattern=r"^paydebt_select_\d+$"))
@@ -100,11 +109,6 @@ if __name__ == "__main__":
             VOTE_OTHER_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, vote_other_name)],
             VOTE_OTHER_SELECT: [CallbackQueryHandler(handle_vote_other_selection, pattern=r"^vote_other_\d+")]
         },
-        fallbacks=[]
-    ))
-    app.add_handler(ConversationHandler(
-        entry_points=[CallbackQueryHandler(handle_charge_selection, pattern=r"^charge_select_\d+")],
-        states={ENTER_COST: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_enter_cost)]},
         fallbacks=[]
     ))
 

@@ -199,7 +199,8 @@ async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_
     trainings[tid]["status"] = "charged"
     save_data(trainings, "one_time_trainings" if ttype == "one_time" else "constant_trainings")
 
-    await query.edit_message_text("✅ Повідомлення з інструкцією надіслано всім, хто голосував 'так'.")
+    await query.edit_message_text(f"Ви обрали: {label}\n\nВведіть загальну вартість тренування в гривнях:")
+    return ENTER_COST
 
 async def handle_payment_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query

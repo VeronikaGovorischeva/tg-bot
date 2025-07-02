@@ -549,10 +549,8 @@ from data import load_data, save_data
 
 
 def reset_today_constant_trainings_status():
-    import datetime
     now = datetime.datetime.now()
-    today = now.weekday()
-    yesterday = (now - datetime.timedelta(days=1)).weekday()
+    today = now.date()
     current_time = now.time()
 
     constant_trainings = load_data("constant_trainings", {})
@@ -560,21 +558,31 @@ def reset_today_constant_trainings_status():
     updated = False
 
     for tid, training in constant_trainings.items():
-        if training.get("weekday") != today:
+        # Calculate the date of the training
+        weekday = training.get("weekday")
+        if weekday is None:
             continue
 
-        end_hour = training.get("end_hour", 0)
-        end_min = training.get("end_min", 0)
-        training_end_time = datetime.time(hour=end_hour, minute=end_min)
+        # Get the most recent past or today date for the training's weekday
+        days_ago = (now.weekday() - weekday) % 7
+        training_date = today - datetime.timedelta(days=days_ago)
 
-        if current_time >= training_end_time:
-            # Скидаємо статус
+        # Skip future trainings
+        if training_date > today:
+            continue
+
+        # Get end time
+        training_end_time = datetime.time(hour=training["end_hour"], minute=training["end_min"])
+        vote_id = f"const_{weekday}_{training['start_hour']:02d}:{training['start_min']:02d}"
+
+        # Reset if ended today
+        if training_date == today and current_time >= training_end_time:
             if training.get("status") != "not charged":
                 training["status"] = "not charged"
                 updated = True
 
-        if training.get("weekday") == yesterday:
-            vote_id = f"const_{training['weekday']}_{training['start_hour']:02d}:{training['start_min']:02d}"
+        # Delete vote if the training was before today
+        if training_date < today:
             if vote_id in votes["votes"]:
                 del votes["votes"][vote_id]
                 updated = True
@@ -582,4 +590,5 @@ def reset_today_constant_trainings_status():
     if updated:
         save_data(constant_trainings, "constant_trainings")
         save_data(votes, "votes")
-        print("✅ Reset status and cleared votes for finished constant trainings.")
+        print("✅ Reset statuses and cleaned up votes for finished trainings.")
+
