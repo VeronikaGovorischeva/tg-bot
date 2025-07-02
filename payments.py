@@ -239,3 +239,62 @@ async def handle_pay_debt_confirmation(update: Update, context: ContextTypes.DEF
                         except Exception as e:
                             print(f"❌ Не вдалося надіслати повідомлення адміну {admin}: {e}")
                     return
+async def view_payments(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_authorized(update.message.from_user.id):
+        await update.message.reply_text("У вас немає доступу до перегляду платежів.")
+        return
+
+    payments = load_data("payments", {})
+    if not payments:
+        await update.message.reply_text("Немає записаних платежів.")
+        return
+
+    training_map = {}
+    for p in payments.values():
+        tid = p["training_id"]
+        if tid not in training_map:
+            training_map[tid] = p["training_datetime"]
+
+    context.user_data["view_payment_options"] = list(training_map.keys())
+
+    keyboard = [
+        [InlineKeyboardButton(training_map[tid], callback_data=f"view_payment_{i}")]
+        for i, tid in enumerate(training_map.keys())
+    ]
+
+    await update.message.reply_text(
+        "Оберіть тренування для перегляду платежів:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def handle_view_payment_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+
+    idx = int(query.data.replace("view_payment_", ""))
+    keys = context.user_data.get("view_payment_options", [])
+    if idx >= len(keys):
+        await query.edit_message_text("⚠️ Помилка: тренування не знайдено.")
+        return
+
+    training_id = keys[idx]
+    payments = load_data("payments", {})
+    users = load_data("users", {})
+
+    paid = []
+    unpaid = []
+
+    for p in payments.values():
+        if p["training_id"] != training_id:
+            continue
+        name = users.get(p["user_id"], {}).get("name", p["user_id"])
+        if p.get("paid"):
+            paid.append(name)
+        else:
+            unpaid.append(name)
+
+    message = f"💰 Платежі за тренування {payments[next(k for k in payments if payments[k]['training_id'] == training_id)]['training_datetime']}\n\n"
+    message += f"✅ Оплатили:\n{chr(10).join(paid) if paid else 'Ніхто'}\n\n"
+    message += f"❌ Не оплатили:\n{chr(10).join(unpaid) if unpaid else 'Немає боржників'}"
+
+    await query.edit_message_text(message)
