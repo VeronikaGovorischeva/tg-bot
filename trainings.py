@@ -463,7 +463,8 @@ async def week_trainings(update: Update, context: ContextTypes.DEFAULT_TYPE):
         coach_str = " з тренером" if t["with_coach"] else ""
         team_str = "" if t["team"] == "Both" else f" ({'чоловіча' if t['team'] == 'Male' else 'жіноча'} команда)"
         day = weekday_names[t["date"].weekday()]
-        message += f"• {day}, {date_str} з {start} до {end}{coach_str}{team_str} \n"
+        desc_str = f" ({t['description']})" if t.get("description") else ""
+        message += f"• {day}, {date_str} з {start} до {end}{coach_str}{team_str}({desc_str})\n"
 
     await update.message.reply_text(message)
 
@@ -486,6 +487,7 @@ def format_next_training_message(user_id: str) -> str:
     team_str = f" для {'чоловічої' if training_info['team'] == 'Male' else 'жіночої'} команди" if training_info[
                                                                                                       "team"] != "Both" else " для обох команд"
     coach_str = " з тренером" if training_info["with_coach"] else ""
+    desc_str = f" ({training_info['description']})" if training_info.get("description") else ""
 
     weekday_names = ['понеділок', 'вівторок', 'середу', 'четвер', "п'ятницю", 'суботу', 'неділю']
     weekday_name = weekday_names[training_info["date"].weekday()]
@@ -498,7 +500,7 @@ def format_next_training_message(user_id: str) -> str:
         day_text = f"через {training_info['days_until']} дні(в)"
 
     return (
-        f"Наступне тренування{team_str}{coach_str} {day_text} в {weekday_name}, {date_str} з {start_time} до {end_time}."
+        f"Наступне тренування{team_str}{coach_str} {day_text} в {weekday_name}, {date_str} з {start_time} до {end_time}.({desc_str})"
     )
 
 
