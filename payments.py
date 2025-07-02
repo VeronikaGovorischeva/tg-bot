@@ -68,6 +68,8 @@ async def charge_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
+
+
 async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -75,34 +77,40 @@ async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_
     try:
         idx = int(query.data.replace("charge_select_", ""))
     except ValueError:
-        await query.edit_message_text("⚠️ Некоректний індекс.")
+        await query.edit_message_text("⚠️ Некоректний вибір.")
         return
 
-    # Rebuild the list of chargeable trainings
     one_time_trainings = load_data("one_time_trainings", {})
     constant_trainings = load_data("constant_trainings", {})
 
     options = []
+
     for tid, t in one_time_trainings.items():
         if t.get("status") == "not charged" and t.get("with_coach"):
-            label = f"{t['date']} о {t['start_hour']:02d}:{t['start_min']:02d}"
-            options.append((tid, "one_time", label))
+            date = t.get("date")
+            hour = t.get("start_hour")
+            minute = t.get("start_min")
+            if date and hour is not None and minute is not None:
+                label = f"{date} о {hour:02d}:{minute:02d} (разове)"
+                options.append((tid, "one_time", label))
 
     for tid, t in constant_trainings.items():
         if t.get("status") == "not charged" and t.get("with_coach"):
-            day = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"][t["weekday"]]
-            label = f"{day} о {t['start_hour']:02d}:{t['start_min']:02d}"
-            options.append((tid, "constant", label))
+            weekday = t.get("weekday")
+            hour = t.get("start_hour")
+            minute = t.get("start_min")
+            if weekday is not None and hour is not None and minute is not None:
+                day = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"][weekday]
+                label = f"{day} о {hour:02d}:{minute:02d} (постійне)"
+                options.append((tid, "constant", label))
 
     if idx >= len(options):
-        await query.edit_message_text("⚠️ Тренування не знайдено.")
+        await query.edit_message_text("⚠️ Тренування більше не доступне.")
         return
 
-    # Unpack selection
     tid, ttype, label = options[idx]
     trainings = load_data("one_time_trainings" if ttype == "one_time" else "constant_trainings", {})
     training = trainings.get(tid)
-
     if not training:
         await query.edit_message_text("⚠️ Тренування не знайдено.")
         return
@@ -124,13 +132,15 @@ async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_
         await query.edit_message_text("Ніхто не проголосував 'так' за це тренування.")
         return
 
-    # Check special fixed-cost rule
+    # Special rule for fixed-cost training
     is_fixed_cost = (
         ttype == "constant" and
         training.get("weekday") == 0 and
         training.get("start_hour") == 17 and
         training.get("start_min") == 0
     )
+
+    from payments import TRAINING_COST, CARD_NUMBER
 
     if is_fixed_cost:
         per_person = round(1750 / len(yes_voters))
@@ -178,50 +188,8 @@ async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_
     await query.edit_message_text("✅ Повідомлення з інструкцією надіслано всім, хто голосував 'так'.")
 
 
-async def handle_payment_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
 
-    payload = query.data[len("paid_yes_"):]
-    # Розбиваємо з кінця, бо user_id завжди останній
-    training_id, user_id = payload.rsplit("_", 1)
 
-    payments = load_data("payments", {})
-    key = f"{training_id}_{user_id}"
-
-    if key not in payments:
-        await query.edit_message_text("⚠️ Помилка: запис про платіж не знайдено. Використай команду /pay_debt для підтвердження")
-        return
-
-    payments[key]["paid"] = True
-    save_data(payments, "payments")
-    await query.edit_message_text("✅ Дякуємо! Оплату зареєстровано.")
-
-    # Перевіряємо, чи всі вже оплатили
-    all_paid = all(p["paid"] for p in payments.values() if p["training_id"] == training_id)
-    if all_paid:
-        one_time_trainings = load_data("one_time_trainings", {})
-        constant_trainings = load_data("constant_trainings", {})
-
-        for t in (one_time_trainings, constant_trainings):
-            for tid, tr in t.items():
-                tr_id = (
-                    f"{tr['date']}_{tr['start_hour']:02d}:{tr['start_min']:02d}"
-                    if "date" in tr
-                    else f"const_{tr['weekday']}_{tr['start_hour']:02d}:{tr['start_min']:02d}"
-                )
-                if tr_id == training_id:
-                    tr["status"] = "collected"
-                    save_data(t, "one_time_trainings" if "date" in tr else "constant_trainings")
-                    for admin in ADMIN_IDS:
-                        try:
-                            await context.bot.send_message(
-                                chat_id=int(admin),
-                                text=f"✅ Всі учасники тренування {training_id} оплатили. Статус оновлено на 'collected'."
-                            )
-                        except Exception as e:
-                            print(f"❌ Не вдалося надіслати повідомлення адміну {admin}: {e}")
-                    return
 async def pay_debt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = str(update.message.from_user.id)
     payments = load_data("payments", {})
