@@ -17,15 +17,17 @@ async def charge_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     for tid, t in one_time.items():
         if t.get("with_coach") and t.get("status") == "not charged":
             label = f"{t['date']} о {t['start_hour']:02d}:{t['start_min']:02d}"
-            options.append((tid, "one_time", label))
-            keyboard.append([InlineKeyboardButton(label, callback_data=f"charge_select_{len(options) - 1}")])
+            index = len(options)
+            options.append((tid, "one_time", label))  # or "constant"
+            keyboard.append([InlineKeyboardButton(label, callback_data=f"charge_select_{index}")])
 
     for tid, t in constant.items():
         if t.get("with_coach") and t.get("status") == "not charged":
             day = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"][t["weekday"]]
             label = f"{day} о {t['start_hour']:02d}:{t['start_min']:02d}"
-            options.append((tid, "constant", label))
-            keyboard.append([InlineKeyboardButton(label, callback_data=f"charge_select_{len(options) - 1}")])
+            index = len(options)
+            options.append((tid, "constant", label))  # or "constant"
+            keyboard.append([InlineKeyboardButton(label, callback_data=f"charge_select_{index}")])
 
     if not options:
         await update.message.reply_text("Немає тренувань для нарахування.")
