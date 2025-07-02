@@ -335,21 +335,6 @@ async def handle_view_payment_selection(update: Update, context: ContextTypes.DE
 
     await query.edit_message_text(message)
 
-    async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
-        await query.answer()
-
-        idx = int(query.data.replace("charge_select_", ""))
-        options = context.user_data.get("charge_options", [])
-        if idx >= len(options):
-            await query.edit_message_text("Помилка: тренування не знайдено.")
-            return ConversationHandler.END
-
-        tid, ttype, label = options[idx]
-        context.user_data["selected_training"] = (tid, ttype, label)
-
-        await query.edit_message_text(f"Ви обрали: {label}\n\nВведіть загальну вартість тренування в гривнях:")
-        return ENTER_COST
 
     # Step 2: Admin enters the cost
     async def handle_enter_cost(update: Update, context: ContextTypes.DEFAULT_TYPE):
