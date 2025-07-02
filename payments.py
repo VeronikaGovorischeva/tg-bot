@@ -42,13 +42,16 @@ async def charge_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             label = f"{date} о {time}"
             options.append((tid, "one_time", label))
 
-    for tid, t in constant_trainings.items():
-        if t.get("status") == "not charged" and t.get("with_coach"):
-            weekday = t["weekday"]
-            time = f"{t['start_hour']:02d}:{t['start_min']:02d}"
-            day = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"][weekday]
-            label = f"{day} о {time}"
-            options.append((tid, "constant", label))
+            for tid, t in one_time_trainings.items():
+                if t.get("status") == "not charged" and t.get("with_coach"):
+                    if "start_hour" not in t or "start_min" not in t or "date" not in t:
+                        print(f"⚠️ Пропущено тренування {tid} через брак даних: {t}")
+                        continue
+
+                    date = t["date"]
+                    time = f"{t['start_hour']:02d}:{t['start_min']:02d}"
+                    label = f"{date} о {time}"
+                    options.append((tid, "one_time", label))
 
     if not options:
         await update.message.reply_text("Немає тренувань, які потребують нарахування платежів.")
@@ -128,8 +131,6 @@ async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_
         training.get("start_hour") == 17 and
         training.get("start_min") == 0
     )
-
-    from payments import TRAINING_COST, CARD_NUMBER
 
     if is_fixed_cost:
         per_person = round(1750 / len(yes_voters))
