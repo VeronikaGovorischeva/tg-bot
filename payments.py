@@ -119,12 +119,14 @@ async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_
 
     options = context.user_data.get("charge_options")
     if not options:
-        await query.edit_message_text("⚠️ Список тренувань недоступний. Спробуйте ще раз команду /charge_all.")
+        await query.edit_message_text(
+            "⚠️ Ця сесія вибору тренування недійсна або застаріла. Будь ласка, спробуйте ще раз /charge_all."
+        )
         return
 
     idx = int(query.data.replace("charge_select_", ""))
     if idx >= len(options):
-        await query.edit_message_text("⚠️ Помилка: тренування не знайдено.")
+        await query.edit_message_text("⚠️ Помилка: вибране тренування не знайдено.")
         return
 
     tid, ttype, label = options[idx]
