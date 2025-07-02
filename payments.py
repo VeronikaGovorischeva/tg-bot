@@ -40,20 +40,18 @@ async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_
     query = update.callback_query
     await query.answer()
 
-    options = context.user_data.get("charge_options")
+    options = context.user_data.get("charge_options", [])
     if not options:
-        await query.edit_message_text("⚠️ Сесія застаріла або перезапущена. Спробуйте /charge_all.")
-        return
+        await query.edit_message_text(
+            "⚠️ Помилка: не вдалося знайти варіанти. Можливо, сесія закінчилась. Спробуй /charge_all ще раз.")
+        return ConversationHandler.END
 
     try:
         idx = int(query.data.replace("charge_select_", ""))
-    except ValueError:
-        await query.edit_message_text("⚠️ Некоректний індекс.")
-        return
-
-    if idx < 0 or idx >= len(options):
-        await query.edit_message_text("⚠️ Невірний вибір. Спробуйте /charge_all ще раз.")
-        return
+        opt = options[idx]
+    except (ValueError, IndexError):
+        await query.edit_message_text("⚠️ Некоректний вибір. Спробуй /charge_all ще раз.")
+        return ConversationHandler.END
 
     opt = options[idx]
     if not isinstance(opt, (tuple, list)) or len(opt) != 3:
