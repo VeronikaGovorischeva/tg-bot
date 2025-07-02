@@ -27,7 +27,7 @@ async def charge_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
 
     context.user_data["charge_options"] = options
-    keyboard = [[InlineKeyboardButton(label, callback_data=f"charge_select_{i}")] for i, (_, _, label) in enumerate(options)]
+    keyboard = [[InlineKeyboardButton(opt[2], callback_data=f"charge_select_{i}")] for i, opt in enumerate(options)]
     await update.message.reply_text("Оберіть тренування:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
