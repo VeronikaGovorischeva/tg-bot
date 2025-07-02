@@ -76,6 +76,7 @@ if __name__ == "__main__":
     # Voting
     app.add_handler(CommandHandler("vote_training", vote_training))
     app.add_handler(CommandHandler("view_votes", view_votes))
+    app.add_handler(CallbackQueryHandler(handle_charge_selection, pattern=r"^charge_select_"))
     app.add_handler(CallbackQueryHandler(handle_vote, pattern=r"^vote_(yes|no)_"))
     app.add_handler(CallbackQueryHandler(handle_view_votes_selection, pattern=r"^view_votes_\d+"))
     app.add_handler(CallbackQueryHandler(handle_training_vote_selection, pattern=r"^training_vote_\d+"))
