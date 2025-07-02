@@ -12,23 +12,28 @@ async def charge_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     constant = load_data("constant_trainings", {})
 
     options = []
+    keyboard = []
+
     for tid, t in one_time.items():
         if t.get("with_coach") and t.get("status") == "not charged":
             label = f"{t['date']} о {t['start_hour']:02d}:{t['start_min']:02d}"
             options.append((tid, "one_time", label))
+            keyboard.append([InlineKeyboardButton(label, callback_data=f"charge_select_{len(options) - 1}")])
+
     for tid, t in constant.items():
         if t.get("with_coach") and t.get("status") == "not charged":
             day = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"][t["weekday"]]
             label = f"{day} о {t['start_hour']:02d}:{t['start_min']:02d}"
             options.append((tid, "constant", label))
+            keyboard.append([InlineKeyboardButton(label, callback_data=f"charge_select_{len(options) - 1}")])
 
     if not options:
         await update.message.reply_text("Немає тренувань для нарахування.")
         return
 
     context.user_data["charge_options"] = options
-    keyboard = [[InlineKeyboardButton(opt[2], callback_data=f"charge_select_{i}")] for i, opt in enumerate(options)]
     await update.message.reply_text("Оберіть тренування:", reply_markup=InlineKeyboardMarkup(keyboard))
+
 
 async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
