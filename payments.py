@@ -37,24 +37,27 @@ async def charge_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     options = []
     for tid, t in one_time_trainings.items():
         if t.get("status") == "not charged" and t.get("with_coach"):
-            date = t["date"]
-            time = f"{t['start_hour']:02d}:{t['start_min']:02d}"
-            label = f"{date} о {time}"
-            options.append((tid, "one_time", label))
+            date = t.get("date")
+            hour = t.get("start_hour")
+            minute = t.get("start_min")
+            if date and hour is not None and minute is not None:
+                label = f"{date} о {hour:02d}:{minute:02d} (разове)"
+                options.append((tid, "one_time", label))
 
     for tid, t in constant_trainings.items():
         if t.get("status") == "not charged" and t.get("with_coach"):
-            weekday = t["weekday"]
-            time = f"{t['start_hour']:02d}:{t['start_min']:02d}"
-            day = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"][weekday]
-            label = f"{day} о {time}"
-            options.append((tid, "constant", label))
+            weekday = t.get("weekday")
+            hour = t.get("start_hour")
+            minute = t.get("start_min")
+            if weekday is not None and hour is not None and minute is not None:
+                day = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"][weekday]
+                label = f"{day} о {hour:02d}:{minute:02d} (постійне)"
+                options.append((tid, "constant", label))
 
     if not options:
         await update.message.reply_text("Немає тренувань, які потребують нарахування платежів.")
         return
 
-    context.user_data["charge_options"] = options
     keyboard = [
         [InlineKeyboardButton(label, callback_data=f"charge_select_{i}")]
         for i, (_, _, label) in enumerate(options)
@@ -79,7 +82,6 @@ async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_
     constant_trainings = load_data("constant_trainings", {})
 
     options = []
-
     for tid, t in one_time_trainings.items():
         if t.get("status") == "not charged" and t.get("with_coach"):
             date = t.get("date")
@@ -127,15 +129,12 @@ async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_
         await query.edit_message_text("Ніхто не проголосував 'так' за це тренування.")
         return
 
-    # Special rule for fixed-cost training
     is_fixed_cost = (
         ttype == "constant" and
         training.get("weekday") == 0 and
         training.get("start_hour") == 17 and
         training.get("start_min") == 0
     )
-
-    from payments import TRAINING_COST, CARD_NUMBER
 
     if is_fixed_cost:
         per_person = round(1750 / len(yes_voters))
@@ -167,9 +166,9 @@ async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_
         try:
             await context.bot.send_message(
                 chat_id=int(uid),
-                text=(f"💳 Ти відвідав(-ла) тренування {training_datetime}.\n"
-                      f"Сума до сплати: {per_person} грн\n"
-                      f"Карта для оплати: {CARD_NUMBER}\n\n"
+                text=(f"💳 Ти відвідав(-ла) тренування {training_datetime}."
+                      f"Сума до сплати: {per_person} грн"
+                      f"Карта для оплати: {CARD_NUMBER}"
                       f"Натисни кнопку нижче, коли оплатиш:"),
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
@@ -181,8 +180,6 @@ async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_
     save_data(trainings, "one_time_trainings" if ttype == "one_time" else "constant_trainings")
 
     await query.edit_message_text("✅ Повідомлення з інструкцією надіслано всім, хто голосував 'так'.")
-
-
 async def handle_payment_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
