@@ -54,17 +54,19 @@ async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_
         await query.edit_message_text("⚠️ Вибране тренування не знайдено.")
         return
 
-    try:
-        tid, ttype, label = options[idx]
-    except Exception:
+    opt = options[idx]
+    if not isinstance(opt, (list, tuple)) or len(opt) != 3:
         await query.edit_message_text("⚠️ Невірні дані тренування.")
         return
 
+    tid, ttype, label = opt
     context.user_data["selected_training"] = (tid, ttype, label)
+
     await query.edit_message_text(
-        f"Ви обрали: {label} Введіть загальну вартість тренування в гривнях:"
+        f"Ви обрали: {label}\n\nВведіть загальну вартість тренування в гривнях:"
     )
     return ENTER_COST
+
 
 
 async def handle_enter_cost(update: Update, context: ContextTypes.DEFAULT_TYPE):
