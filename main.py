@@ -84,6 +84,7 @@ if __name__ == "__main__":
     app.add_handler(CallbackQueryHandler(handle_send_message_team_selection, pattern=r"^send_team_"))
 
     app.add_handler(CommandHandler("charge_all", charge_all))
+    app.add_handler(CommandHandler("set_cost", set_cost))
     app.add_handler(CallbackQueryHandler(handle_charge_selection, pattern=r"^charge_select_"))
     app.add_handler(CallbackQueryHandler(handle_payment_confirmation, pattern=r"^paid_yes_.*"))
     app.add_handler(CommandHandler("pay_debt", pay_debt))

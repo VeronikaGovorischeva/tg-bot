@@ -5,8 +5,30 @@ from validation import ADMIN_IDS
 from validation import is_authorized
 
 
-TRAINING_COST = 2000
+TRAINING_COST = 1400
 CARD_NUMBER = "5457 0825 2151 6794"
+from telegram.ext import CommandHandler
+from validation import is_authorized
+from payments import TRAINING_COST
+
+async def set_cost(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    if not is_authorized(user_id):
+        await update.message.reply_text("⛔ У вас немає прав для цієї команди.")
+        return
+
+    if not context.args:
+        await update.message.reply_text("Використання: /set_cost [нова_вартість]\nПриклад: /set_cost 1600")
+        return
+
+    try:
+        new_cost = int(context.args[0])
+        global TRAINING_COST
+        TRAINING_COST = new_cost
+        await update.message.reply_text(f"✅ Вартість тренування встановлено на {new_cost} грн.")
+    except ValueError:
+        await update.message.reply_text("⚠️ Будь ласка, введіть число.")
+
 
 async def charge_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     one_time_trainings = load_data("one_time_trainings", {})
