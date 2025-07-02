@@ -34,29 +34,28 @@ async def charge_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     context.user_data["charge_options"] = options
     await update.message.reply_text("Оберіть тренування:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-
 async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
     options = context.user_data.get("charge_options")
     if not options:
-        await query.edit_message_text("⚠️ Сесія застаріла. Спробуйте /charge_all.")
+        await query.edit_message_text("⚠️ Сесія застаріла або перезапущена. Спробуйте /charge_all.")
         return
 
     try:
         idx = int(query.data.replace("charge_select_", ""))
     except ValueError:
-        await query.edit_message_text("⚠️ Некоректний запит.")
+        await query.edit_message_text("⚠️ Некоректний індекс.")
         return
 
     if idx < 0 or idx >= len(options):
-        await query.edit_message_text("⚠️ Вибране тренування не знайдено.")
+        await query.edit_message_text("⚠️ Невірний вибір. Спробуйте /charge_all ще раз.")
         return
 
     opt = options[idx]
     if not isinstance(opt, (tuple, list)) or len(opt) != 3:
-        await query.edit_message_text("⚠️ Некоректні дані тренування.")
+        await query.edit_message_text("⚠️ Дані про тренування пошкоджені.")
         return
 
     tid, ttype, label = opt
@@ -66,6 +65,7 @@ async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_
         f"Ви обрали: {label}\n\nВведіть загальну вартість тренування в гривнях:"
     )
     return ENTER_COST
+
 
 
 async def handle_enter_cost(update: Update, context: ContextTypes.DEFAULT_TYPE):
