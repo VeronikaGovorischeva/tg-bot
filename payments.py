@@ -41,14 +41,26 @@ async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_
 
     try:
         idx = int(query.data.replace("charge_select_", ""))
+    except ValueError:
+        await query.edit_message_text("⚠️ Некоректне значення індексу.")
+        return
+
+    if idx < 0 or idx >= len(options):
+        await query.edit_message_text("⚠️ Вибране тренування не знайдено.")
+        return
+
+    try:
         tid, ttype, label = options[idx]
-    except:
-        await query.edit_message_text("⚠️ Некоректні дані тренування.")
+    except Exception:
+        await query.edit_message_text("⚠️ Невірні дані тренування.")
         return
 
     context.user_data["selected_training"] = (tid, ttype, label)
-    await query.edit_message_text(f"Ви обрали: {label}\n\nВведіть загальну вартість тренування в гривнях:")
+    await query.edit_message_text(
+        f"Ви обрали: {label}\n\nВведіть загальну вартість тренування в гривнях:"
+    )
     return ENTER_COST
+
 
 async def handle_enter_cost(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
