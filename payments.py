@@ -22,7 +22,9 @@ async def charge_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     for tid, t in constant_trainings.items():
         if t.get("status") == "not charged" and t.get("with_coach"):
-            weekday = t["weekday"]
+            weekday = t.get("weekday")
+            if weekday is None:
+                continue
             time = f"{t['start_hour']:02d}:{t['start_min']:02d}"
             day = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"][weekday]
             label = f"{day} о {time}"
@@ -32,7 +34,12 @@ async def charge_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await update.message.reply_text("Немає тренувань, які потребують нарахування платежів.")
         return
 
-    context.user_data["charge_options"] = options
+    # Надійно зберігаємо в user_data за user_id
+    user_id = update.effective_user.id
+    if "all_charge_context" not in context.bot_data:
+        context.bot_data["all_charge_context"] = {}
+    context.bot_data["all_charge_context"][user_id] = options
+
     keyboard = [
         [InlineKeyboardButton(label, callback_data=f"charge_select_{i}")]
         for i, (_, _, label) in enumerate(options)
@@ -47,11 +54,13 @@ async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_
     query = update.callback_query
     await query.answer()
 
+    user_id = query.from_user.id
     idx = int(query.data.replace("charge_select_", ""))
-    options = context.user_data.get("charge_options", [])
+
+    options = context.bot_data.get("all_charge_context", {}).get(user_id, [])
     if idx >= len(options):
-        await query.edit_message_text("Помилка: тренування не знайдено.")
-        return
+            await query.edit_message_text("Помилка: тренування не знайдено або сесія застаріла.")
+            return
 
     tid, ttype, label = options[idx]
     trainings = load_data("one_time_trainings" if ttype == "one_time" else "constant_trainings")
