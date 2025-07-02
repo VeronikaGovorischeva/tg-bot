@@ -83,16 +83,7 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("send_message", send_message_command))
     app.add_handler(CallbackQueryHandler(handle_send_message_team_selection, pattern=r"^send_team_"))
 
-    charge_handler = ConversationHandler(
-        entry_points=[CommandHandler("charge_all", charge_all)],
-        states={
-            ENTER_COST: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_enter_cost)],
-        },
-        fallbacks=[],
-        allow_reentry=True
-    )
-
-    app.add_handler(charge_handler)
+    app.add_handler(CommandHandler("charge_all", charge_all))
     app.add_handler(CallbackQueryHandler(handle_charge_selection, pattern=r"^charge_select_"))
     app.add_handler(CallbackQueryHandler(handle_payment_confirmation, pattern=r"^paid_yes_.*"))
     app.add_handler(CommandHandler("pay_debt", pay_debt))
