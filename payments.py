@@ -34,11 +34,10 @@ async def charge_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await update.message.reply_text("Немає тренувань, які потребують нарахування платежів.")
         return
 
-    # Надійно зберігаємо в user_data за user_id
-    user_id = update.effective_user.id
-    if "all_charge_context" not in context.bot_data:
-        context.bot_data["all_charge_context"] = {}
-    context.bot_data["all_charge_context"][user_id] = options
+    user_id = str(update.effective_user.id)
+    if "charge_sessions" not in context.bot_data:
+        context.bot_data["charge_sessions"] = {}
+    context.bot_data["charge_sessions"][user_id] = options
 
     keyboard = [
         [InlineKeyboardButton(label, callback_data=f"charge_select_{i}")]
@@ -54,19 +53,25 @@ async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_
     query = update.callback_query
     await query.answer()
 
-    user_id = query.from_user.id
-    idx = int(query.data.replace("charge_select_", ""))
+    user_id = str(query.from_user.id)
+    session = context.bot_data.get("charge_sessions", {}).get(user_id)
 
-    options = context.bot_data.get("all_charge_context", {}).get(user_id, [])
-    if idx >= len(options):
-            await query.edit_message_text("Помилка: тренування не знайдено або сесія застаріла.")
+    if not session:
+        await query.edit_message_text("Сесія нарахування застаріла або відсутня. Використай /charge_all знову.")
+        return
+
+    try:
+        idx = int(query.data.replace("charge_select_", ""))
+        tid, ttype, label = session[idx]
+        trainings = load_data("one_time_trainings" if ttype == "one_time" else "constant_trainings", {})
+        training = trainings.get(tid)
+
+        if not training:
+            await query.edit_message_text("⚠️ Тренування не знайдено.")
             return
 
-    tid, ttype, label = options[idx]
-    trainings = load_data("one_time_trainings" if ttype == "one_time" else "constant_trainings")
-    training = trainings.get(tid)
-    if not training:
-        await query.edit_message_text("Тренування не знайдено.")
+    except (IndexError, ValueError):
+        await query.edit_message_text("Помилка: тренування не знайдено.")
         return
 
     votes = load_data("votes", {"votes": {}})["votes"]
