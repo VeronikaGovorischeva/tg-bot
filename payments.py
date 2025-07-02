@@ -57,7 +57,7 @@ async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_
 
     context.user_data["selected_training"] = (tid, ttype, label)
     await query.edit_message_text(
-        f"Ви обрали: {label}\n\nВведіть загальну вартість тренування в гривнях:"
+        f"Ви обрали: {label} Введіть загальну вартість тренування в гривнях:"
     )
     return ENTER_COST
 
