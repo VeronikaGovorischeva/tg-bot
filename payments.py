@@ -1,14 +1,19 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes
+from telegram.ext import ContextTypes, ConversationHandler, MessageHandler, filters, CallbackQueryHandler, \
+    CommandHandler
 from data import load_data, save_data
-from validation import ADMIN_IDS
-from validation import is_authorized
+from validation import ADMIN_IDS, is_authorized
 
+CHARGE_SELECT_TRAINING, CHARGE_ENTER_AMOUNT = range(100, 102)
 
-TRAINING_COST = 1400
 CARD_NUMBER = "5457 0825 2151 6794"
 
-async def charge_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+
+async def charge_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if not is_authorized(update.message.from_user.id):
+        await update.message.reply_text("⛔ У вас немає прав для цієї команди.")
+        return ConversationHandler.END
+
     one_time_trainings = load_data("one_time_trainings", {})
     constant_trainings = load_data("constant_trainings", {})
 
@@ -30,7 +35,7 @@ async def charge_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     if not options:
         await update.message.reply_text("Немає тренувань, які потребують нарахування платежів.")
-        return
+        return ConversationHandler.END
 
     context.user_data["charge_options"] = options
     keyboard = [
@@ -43,23 +48,55 @@ async def charge_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    return CHARGE_SELECT_TRAINING
+
+
+async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
 
     idx = int(query.data.replace("charge_select_", ""))
     options = context.user_data.get("charge_options", [])
+
     if idx >= len(options):
         await query.edit_message_text("Помилка: тренування не знайдено.")
-        return
+        return ConversationHandler.END
 
     tid, ttype, label = options[idx]
+    context.user_data["selected_training"] = (tid, ttype, label)
+
+    await query.edit_message_text(
+        f"Ви обрали тренування: {label}\n\n"
+        "Введіть суму для цього тренування:\n"
+        "Наприклад: 150"
+    )
+
+    return CHARGE_ENTER_AMOUNT
+
+
+async def handle_charge_amount_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if "selected_training" not in context.user_data:
+        await update.message.reply_text("⚠️ Помилка: дані про тренування втрачено. Спробуйте /charge_all знову.")
+        return ConversationHandler.END
+
+    try:
+        amount = int(update.message.text.strip())
+        if amount <= 0:
+            await update.message.reply_text("⚠️ Сума повинна бути більше 0. Спробуйте ще раз:")
+            return CHARGE_ENTER_AMOUNT
+    except ValueError:
+        await update.message.reply_text("⚠️ Будь ласка, введіть число. Спробуйте ще раз:")
+        return CHARGE_ENTER_AMOUNT
+
+    tid, ttype, label = context.user_data["selected_training"]
+
     trainings = load_data("one_time_trainings" if ttype == "one_time" else "constant_trainings")
     training = trainings.get(tid)
     if not training:
-        await query.edit_message_text("Тренування не знайдено.")
-        return
+        await update.message.reply_text("Тренування не знайдено.")
+        return ConversationHandler.END
 
+    # Get votes for this training
     votes = load_data("votes", {"votes": {}})["votes"]
     training_id = (
         f"{training['date']}_{training['start_hour']:02d}:{training['start_min']:02d}"
@@ -68,28 +105,34 @@ async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_
     )
 
     if training_id not in votes:
-        await query.edit_message_text("Ніхто не голосував за це тренування.")
-        return
+        await update.message.reply_text("Ніхто не голосував за це тренування.")
+        return ConversationHandler.END
 
     voters = votes[training_id]
     yes_voters = [uid for uid, v in voters.items() if v["vote"] == "yes"]
     if not yes_voters:
-        await query.edit_message_text("Ніхто не проголосував 'так' за це тренування.")
-        return
+        await update.message.reply_text("Ніхто не проголосував 'так' за це тренування.")
+        return ConversationHandler.END
 
-    per_person = round(TRAINING_COST / len(yes_voters))
+    # Calculate amount per person
+    per_person = round(amount / len(yes_voters))
     training_datetime = (
         f"{training['date']} {training['start_hour']:02d}:{training['start_min']:02d}"
         if ttype == "one_time"
         else f"{label}"
     )
 
+    # Create payments
     payments = load_data("payments", {})
+    success_count = 0
+
     for uid in yes_voters:
-        payments[f"{training_id}_{uid}"] = {
+        payment_key = f"{training_id}_{uid}"
+        payments[payment_key] = {
             "user_id": uid,
             "training_id": training_id,
             "amount": per_person,
+            "total_training_cost": amount,
             "training_datetime": training_datetime,
             "card": CARD_NUMBER,
             "paid": False
@@ -105,6 +148,7 @@ async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_
                       f"Натисни кнопку нижче, коли оплатиш:"),
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
+            success_count += 1
         except Exception as e:
             print(f"❌ Помилка надсилання повідомлення для {uid}: {e}")
 
@@ -112,8 +156,15 @@ async def handle_charge_selection(update: Update, context: ContextTypes.DEFAULT_
     trainings[tid]["status"] = "charged"
     save_data(trainings, "one_time_trainings" if ttype == "one_time" else "constant_trainings")
 
-    await query.edit_message_text("✅ Повідомлення з інструкцією надіслано всім, хто голосував 'так'.")
+    await update.message.reply_text(
+        f"✅ Нарахування завершено!\n"
+        f"💰 Загальна сума: {amount} грн\n"
+        f"👥 Учасників: {len(yes_voters)}\n"
+        f"💵 По {per_person} грн з особи\n"
+        f"📤 Повідомлення надіслано {success_count} учасникам"
+    )
 
+    return ConversationHandler.END
 
 
 async def handle_payment_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -135,7 +186,7 @@ async def handle_payment_confirmation(update: Update, context: ContextTypes.DEFA
     save_data(payments, "payments")
     await query.edit_message_text("✅ Дякуємо! Оплату зареєстровано.")
 
-    # Перевіряємо, чи всі вже оплатили
+    # Check if all paid and notify admins
     all_paid = all(p["paid"] for p in payments.values() if p["training_id"] == training_id)
     if all_paid:
         one_time_trainings = load_data("one_time_trainings", {})
@@ -160,6 +211,12 @@ async def handle_payment_confirmation(update: Update, context: ContextTypes.DEFA
                         except Exception as e:
                             print(f"❌ Не вдалося надіслати повідомлення адміну {admin}: {e}")
                     return
+
+
+async def cancel_charge(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text("❌ Нарахування скасовано.")
+    return ConversationHandler.END
+
 async def pay_debt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = str(update.message.from_user.id)
     payments = load_data("payments", {})
@@ -184,6 +241,7 @@ async def pay_debt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
+
 async def handle_pay_debt_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
@@ -206,6 +264,7 @@ async def handle_pay_debt_selection(update: Update, context: ContextTypes.DEFAUL
         f"Ти точно оплатив(-ла) {selected['amount']} грн за тренування {selected['training_datetime']}?",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
+
 
 async def handle_pay_debt_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
@@ -255,6 +314,7 @@ async def handle_pay_debt_confirmation(update: Update, context: ContextTypes.DEF
                             print(f"❌ Не вдалося надіслати повідомлення адміну {admin}: {e}")
                     return
 
+
 async def view_payments(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_authorized(update.message.from_user.id):
         await update.message.reply_text("У вас немає доступу до перегляду платежів.")
@@ -283,23 +343,6 @@ async def view_payments(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-async def set_cost(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    if not is_authorized(user_id):
-        await update.message.reply_text("⛔ У вас немає прав для цієї команди.")
-        return
-
-    if not context.args:
-        await update.message.reply_text("Використання: /set_cost [нова_вартість]\nПриклад: /set_cost 1600")
-        return
-
-    try:
-        new_cost = int(context.args[0])
-        global TRAINING_COST
-        TRAINING_COST = new_cost
-        await update.message.reply_text(f"✅ Вартість тренування встановлено на {new_cost} грн.")
-    except ValueError:
-        await update.message.reply_text("⚠️ Будь ласка, введіть число.")
 
 async def handle_view_payment_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
@@ -332,3 +375,20 @@ async def handle_view_payment_selection(update: Update, context: ContextTypes.DE
     message += f"❌ Не оплатили:\n{chr(10).join(unpaid) if unpaid else 'Немає боржників'}"
 
     await query.edit_message_text(message)
+
+
+def create_charge_conversation_handler():
+    return ConversationHandler(
+        entry_points=[CommandHandler("charge_all", charge_all)],
+        states={
+            CHARGE_SELECT_TRAINING: [
+                CallbackQueryHandler(handle_charge_selection, pattern=r"^charge_select_\d+$")
+            ],
+            CHARGE_ENTER_AMOUNT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_charge_amount_input)
+            ],
+        },
+        fallbacks=[
+            CommandHandler('cancel', cancel_charge)
+        ],
+    )

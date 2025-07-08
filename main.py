@@ -14,13 +14,10 @@ import os
 
 from voting import vote_for, vote_other_name, handle_vote_other_selection, handle_vote_other_cast
 
-
-
-
 from apscheduler.schedulers.background import BackgroundScheduler
 
-
 BOT_TOKEN = os.getenv("NEW_TOKEN")
+
 
 async def error(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     print(f"Update {update} caused error {context.error}")
@@ -73,16 +70,17 @@ if __name__ == "__main__":
     # Voting
     app.add_handler(CommandHandler("vote_training", vote_training))
     app.add_handler(CommandHandler("view_votes", view_votes))
-    app.add_handler(CallbackQueryHandler(handle_charge_selection, pattern=r"^charge_select_"))
+
     app.add_handler(CallbackQueryHandler(handle_vote, pattern=r"^vote_(yes|no)_"))
     app.add_handler(CallbackQueryHandler(handle_view_votes_selection, pattern=r"^view_votes_\d+"))
     app.add_handler(CallbackQueryHandler(handle_training_vote_selection, pattern=r"^training_vote_\d+"))
     app.add_handler(CommandHandler("send_message", send_message_command))
     app.add_handler(CallbackQueryHandler(handle_send_message_team_selection, pattern=r"^send_team_"))
 
+    # Enhanced payment system with dynamic pricing
+    app.add_handler(create_charge_conversation_handler())
     app.add_handler(CommandHandler("charge_all", charge_all))
-    app.add_handler(CommandHandler("set_cost", set_cost))
-    app.add_handler(CallbackQueryHandler(handle_charge_selection, pattern=r"^charge_select_"))
+
     app.add_handler(CallbackQueryHandler(handle_payment_confirmation, pattern=r"^paid_yes_.*"))
     app.add_handler(CommandHandler("pay_debt", pay_debt))
     app.add_handler(CallbackQueryHandler(handle_pay_debt_selection, pattern=r"^paydebt_select_\d+$"))
