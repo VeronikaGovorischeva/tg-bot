@@ -86,14 +86,27 @@ async def open_training_voting(app, training, training_id, users, training_type)
     else:
         date_str = WEEKDAYS[training['weekday']]
 
-    description = training.get("description")
-    description_part = f" ({description})" if description else ""
+    start_time = f"{training['start_hour']:02d}:{training['start_min']:02d}"
+    end_time = f"{training['end_hour']:02d}:{training['end_min']:02d}"
+
+    # Coach info
+    coach_str = " (З тренером)" if training.get("with_coach") else ""
+
+    # Location
+    location = training.get("location", "")
+    location = "" if location and location.lower() == "наукма" else location
+    loc_str = f"\n📍 {location}" if location else ""
+
+    # Description
+    description = training.get("description", "")
+    desc_str = f"\nℹ️ {description}" if description else ""
 
     message = (
-        f"🗳 Почалося голосування!\n"
-        f"Тренування {'в ' if training_type == 'constant' else ''}{date_str} {description_part} "
-        f"з {training['start_hour']:02d}:{training['start_min']:02d} "
-        f"до {training['end_hour']:02d}:{training['end_min']:02d}."
+        f" Почалося голосування!\n"
+        f"🏐 Тренування{'в ' if training_type == 'constant' else ' '}{date_str}{coach_str}\n"
+        f"⏰ З {start_time} до {end_time}"
+        f"{loc_str}"
+        f"{desc_str}"
     )
 
     keyboard = InlineKeyboardMarkup([
@@ -116,9 +129,6 @@ async def open_training_voting(app, training, training_id, users, training_type)
 
 
 async def send_voting_reminder(app, training, training_id, users, votes_data, training_type):
-    """
-    Надсилає нагадування про голосування тим, хто ще не проголосував
-    """
     vote_id = generate_training_id(training, training_type)
 
     if training_type == "one-time":
@@ -126,18 +136,30 @@ async def send_voting_reminder(app, training, training_id, users, votes_data, tr
     else:
         date_str = WEEKDAYS[training['weekday']]
 
+    start_time = f"{training['start_hour']:02d}:{training['start_min']:02d}"
+    end_time = f"{training['end_hour']:02d}:{training['end_min']:02d}"
+
     votes = votes_data.get("votes", {}).get(vote_id, {})
     voted_users = set(str(uid) for uid in votes.keys())
 
-    description = training.get("description")
-    description_part = f" ({description})" if description else ""
+    # Coach info
+    coach_str = " (З тренером)" if training.get("with_coach") else ""
+
+    # Location
+    location = training.get("location", "")
+    location = "" if location and location.lower() == "наукма" else location
+    loc_str = f"\n📍 {location}" if location else ""
+
+    # Description
+    description = training.get("description", "")
+    desc_str = f"\nℹ️ {description}" if description else ""
 
     message = (
-        f"⏰ Нагадування про голосування!\n"
-        f"Відбудеться тренування {description_part} "
-        f"{'в ' if training_type == 'constant' else ''}{date_str} "
-        f"з {training['start_hour']:02d}:{training['start_min']:02d} "
-        f"до {training['end_hour']:02d}:{training['end_min']:02d}.\n"
+        f" Нагадування про голосування!\n"
+        f"Тренування {'в ' if training_type == 'constant' else ''}{date_str}{coach_str}\n"
+        f"⏰ З {start_time} до {end_time}"
+        f"{loc_str}"
+        f"{desc_str}\n\n"
         f"Будь ласка, проголосуйте!"
     )
 

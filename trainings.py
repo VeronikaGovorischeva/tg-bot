@@ -442,6 +442,7 @@ def get_next_week_trainings(team=None):
                     "end_min": training["end_min"],
                     "team": training["team"],
                     "with_coach": training["with_coach"],
+                    "location": training.get("location", ""),
                     "description": training.get("description", ""),
                     "type": "constant"
                 })
@@ -464,6 +465,7 @@ def get_next_week_trainings(team=None):
                 "end_min": training["end_min"],
                 "team": training["team"],
                 "with_coach": training["with_coach"],
+                "location": training.get("location", ""),
                 "description": training.get("description", ""),
                 "type": "one-time"
             })
@@ -491,13 +493,29 @@ async def week_trainings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     weekday_names = ['Понеділок', 'Вівторок', 'Середа', 'Четвер', "П'ятниця", 'Субота', 'Неділя']
     for t in trainings:
         date_str = t["date"].strftime("%d.%m.%Y")
-        start = f"{t['start_hour']:02d}:{t['start_min']:02d}"
-        end = f"{t['end_hour']:02d}:{t['end_min']:02d}"
-        coach_str = " з тренером" if t["with_coach"] else ""
-        team_str = "" if t["team"] == "Both" else f" ({'чоловіча' if t['team'] == 'Male' else 'жіноча'} команда)"
+        time_str = f"{t['start_hour']:02d}:{t['start_min']:02d}-{t['end_hour']:02d}:{t['end_min']:02d}"
         day = weekday_names[t["date"].weekday()]
-        desc_str = f" ({t['description']})" if t.get("description") else ""
-        message += f"• {day}, {date_str} з {start} до {end}{coach_str}{team_str}{desc_str}\n"
+
+        main_line = f"• {day} {date_str} {time_str}"
+
+        if t["with_coach"]:
+            main_line += ", з тренером"
+
+        if t["team"] != "Both":
+            team_name = "чоловіча" if t["team"] == "Male" else "жіноча"
+            main_line += f", {team_name} команда"
+
+        message += main_line + "\n"
+
+        location = t.get("location", "")
+        if location and location.lower() != "наукма":
+            message += f"  📍 {location}\n"
+
+        description = t.get("description", "")
+        if description:
+            message += f"  ℹ️ {description}\n"
+
+        message += "\n"
 
     await update.message.reply_text(message)
 

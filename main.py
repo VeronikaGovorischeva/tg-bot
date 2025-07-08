@@ -19,10 +19,7 @@ from voting import vote_for, vote_other_name, handle_vote_other_selection, handl
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
-chillnttestbot_token = "7640419427:AAHUciixP3FyY6PLahICwer6ybFLwQRqucg"
-idontknownamesbot_token = "8010698609:AAGZhl3Cfqh_YRaV1u9ROm0xySNUgLIzIC0"
-megachillguybot_token = "8158067169:AAGQaLETvllC5HR4byyadJqQeEwsOQN0IyE"
-bot_username = "ChillNtTestBot"
+
 BOT_TOKEN = os.getenv("NEW_TOKEN")
 
 async def error(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
