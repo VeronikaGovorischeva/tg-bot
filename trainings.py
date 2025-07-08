@@ -30,7 +30,7 @@ class VotingType(Enum):
 
 
 # Conversation states
-TYPE, TEAM, COACH, DATE, START, END, WEEKDAY, START_VOTING = range(8)
+TYPE, TEAM, COACH, LOCATION, DESCRIPTION, DATE, START, END, WEEKDAY, START_VOTING = range(10)
 
 # File paths
 ONE_TIME_TRAININGS_FILE = "one_time_trainings"
@@ -42,6 +42,8 @@ MESSAGES = {
     "select_type": "Виберіть тип тренування:",
     "select_team": "Для якої команди це тренування?",
     "with_coach": "Це тренування з тренером?",
+    "enter_location": "Введіть місце проведення тренування або посилання на гугл карти,або надішліть '-' якщо локація НаУКМА:",
+    "enter_description": "Введіть опис тренування, або надішліть '-' якщо опису немає:",
     "enter_date": "Введіть дату тренування у форматі ДД.ММ.РРРР (наприклад, 25.03.2025)",
     "enter_start_time": "Введіть час початку тренування у форматі ГГ:ХХ (наприклад, 19:00)",
     "enter_end_time": "Введіть час закінчення тренування у форматі ГГ:ХХ (наприклад, 21:00)",
@@ -51,7 +53,6 @@ MESSAGES = {
     "enter_voting_start_date": "Введіть дату початку голосування (ДД.ММ.РРРР):",
     "select_voting_start_day": "Оберіть день тижня для початку голосування:",
     "training_saved": "Тренування успішно збережено!"
-
 }
 
 
@@ -140,11 +141,31 @@ async def training_coach(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await query.answer()
     context.user_data['with_coach'] = query.data == "training_coach_yes"
 
+    # NEW: Ask for location after coach selection
+    await query.edit_message_text(MESSAGES["enter_location"])
+    return LOCATION
+
+
+# NEW: Handle location input
+async def training_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    location = update.message.text.strip()
+    context.user_data['training_location'] = None if location == '-' else location
+
+    await update.message.reply_text(MESSAGES["enter_description"])
+    return DESCRIPTION
+
+
+# NEW: Handle description input
+async def training_description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    description = update.message.text.strip()
+    # If user sends '-', treat as no description
+    context.user_data['training_description'] = None if description == '-' else description
+
     if context.user_data['training_type'] == TrainingType.ONE_TIME.value:
-        await query.edit_message_text(MESSAGES["enter_date"])
+        await update.message.reply_text(MESSAGES["enter_date"])
         return DATE
     else:
-        await query.edit_message_text(
+        await update.message.reply_text(
             MESSAGES["select_weekday"],
             reply_markup=create_weekday_keyboard()
         )
@@ -241,6 +262,8 @@ async def save_training_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
     training_data = {
         "team": context.user_data['training_team'],
         "with_coach": context.user_data['with_coach'],
+        "location": context.user_data['training_location'],  # NEW
+        "description": context.user_data.get('training_description'),  # NEW
         "start_hour": context.user_data['start_hour'],
         "start_min": context.user_data['start_min'],
         "end_hour": context.user_data['end_hour'],
@@ -262,7 +285,13 @@ async def save_training_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
     trainings[new_id] = training_data
     save_data(trainings, file_path)
 
-    message = MESSAGES["training_saved"]
+    # UPDATED: Show confirmation with location and description
+    location = training_data["location"]
+    description = training_data.get("description")
+    desc_text = f" ({description})" if description else ""
+
+    message = f"✅ {MESSAGES['training_saved']}\n📍 Місце: {location}{desc_text}"
+
     if update.message:
         await update.message.reply_text(message)
     elif update.callback_query:
@@ -282,6 +311,8 @@ def create_training_add_handler():
             TYPE: [CallbackQueryHandler(training_type)],
             TEAM: [CallbackQueryHandler(training_team)],
             COACH: [CallbackQueryHandler(training_coach)],
+            LOCATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, training_location)],  # NEW
+            DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, training_description)],  # NEW
             DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, training_date)],
             START: [MessageHandler(filters.TEXT & ~filters.COMMAND, training_start)],
             END: [MessageHandler(filters.TEXT & ~filters.COMMAND, training_end)],
@@ -335,6 +366,8 @@ def get_next_training(team=None):
             "end_min": training.get("end_min", 0),
             "team": str(training.get("team", "Both")),
             "with_coach": bool(training.get("with_coach", False)),
+            "location": training.get("location", "Не вказано"),  # NEW
+            "description": training.get("description"),  # NEW
             "type": "constant",
             "days_until": days_until
         })
@@ -365,6 +398,8 @@ def get_next_training(team=None):
             "end_min": training.get("end_min", 0),
             "team": str(training.get("team", "Both")),
             "with_coach": bool(training.get("with_coach", False)),
+            "location": training.get("location", "Не вказано"),  # NEW
+            "description": training.get("description"),  # NEW
             "type": "one-time",
             "days_until": days_until
         })
@@ -383,8 +418,6 @@ def get_next_week_trainings(team=None):
 
     now = datetime.now()
     current_date = now.date()
-    current_time = now.time()
-    current_weekday = now.weekday()
 
     end_date = current_date + timedelta(days=7)
     trainings = []
@@ -409,6 +442,7 @@ def get_next_week_trainings(team=None):
                     "end_min": training["end_min"],
                     "team": training["team"],
                     "with_coach": training["with_coach"],
+                    "location": training.get("location", ""),
                     "description": training.get("description", ""),
                     "type": "constant"
                 })
@@ -431,6 +465,7 @@ def get_next_week_trainings(team=None):
                 "end_min": training["end_min"],
                 "team": training["team"],
                 "with_coach": training["with_coach"],
+                "location": training.get("location", ""),
                 "description": training.get("description", ""),
                 "type": "one-time"
             })
@@ -458,13 +493,29 @@ async def week_trainings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     weekday_names = ['Понеділок', 'Вівторок', 'Середа', 'Четвер', "П'ятниця", 'Субота', 'Неділя']
     for t in trainings:
         date_str = t["date"].strftime("%d.%m.%Y")
-        start = f"{t['start_hour']:02d}:{t['start_min']:02d}"
-        end = f"{t['end_hour']:02d}:{t['end_min']:02d}"
-        coach_str = " з тренером" if t["with_coach"] else ""
-        team_str = "" if t["team"] == "Both" else f" ({'чоловіча' if t['team'] == 'Male' else 'жіноча'} команда)"
+        time_str = f"{t['start_hour']:02d}:{t['start_min']:02d}-{t['end_hour']:02d}:{t['end_min']:02d}"
         day = weekday_names[t["date"].weekday()]
-        desc_str = f" ({t['description']})" if t.get("description") else ""
-        message += f"• {day}, {date_str} з {start} до {end}{coach_str}{team_str}{desc_str}\n"
+
+        main_line = f"• {day} {date_str} {time_str}"
+
+        if t["with_coach"]:
+            main_line += ", з тренером"
+
+        if t["team"] != "Both":
+            team_name = "чоловіча" if t["team"] == "Male" else "жіноча"
+            main_line += f", {team_name} команда"
+
+        message += main_line + "\n"
+
+        location = t.get("location", "")
+        if location and location.lower() != "наукма":
+            message += f"  📍 {location}\n"
+
+        description = t.get("description", "")
+        if description:
+            message += f"  ℹ️ {description}\n"
+
+        message += "\n"
 
     await update.message.reply_text(message)
 
@@ -486,21 +537,31 @@ def format_next_training_message(user_id: str) -> str:
     end_time = f"{training_info['end_hour']:02d}:{training_info['end_min']:02d}"
     team_str = f" для {'чоловічої' if training_info['team'] == 'Male' else 'жіночої'} команди" if training_info[
                                                                                                       "team"] != "Both" else " для обох команд"
-    coach_str = " з тренером" if training_info["with_coach"] else ""
-    desc_str = f" ({training_info['description']})" if training_info.get("description") else ""
+    coach_str = " (З тренером)" if training_info["with_coach"] else ""
+
+    location = training_info.get("location", "")
+    location = "" if location.lower() == "наукма" else location
+    loc_str = f"\n📍{location}" if location else ""
+
+    description = training_info.get("description", "")
+    desc_str = f"\nℹ️ {description}" if description else ""
 
     weekday_names = ['понеділок', 'вівторок', 'середу', 'четвер', "п'ятницю", 'суботу', 'неділю']
     weekday_name = weekday_names[training_info["date"].weekday()]
 
     if training_info["days_until"] == 0:
-        day_text = "сьогодні"
+        day_text = "Сьогодні"
     elif training_info["days_until"] == 1:
-        day_text = "завтра"
+        day_text = "Завтра"
     else:
-        day_text = f"через {training_info['days_until']} дні(в)"
+        day_text = f"Через {training_info['days_until']} дні(в)"
 
     return (
-        f"Наступне тренування{team_str}{coach_str} {day_text} в {weekday_name}, {date_str} з {start_time} до {end_time}.{desc_str}"
+        f"🏐 Наступне тренування{team_str}{coach_str}\n"
+        f"📅 {day_text} в {weekday_name}, {date_str}\n"
+        f"⏰ З {start_time} до {end_time}"
+        f"{loc_str}"
+        f"{desc_str}"
     )
 
 
@@ -593,4 +654,3 @@ def reset_today_constant_trainings_status():
         save_data(constant_trainings, "constant_trainings")
         save_data(votes, "votes")
         print("✅ Reset statuses and cleaned up votes for finished trainings.")
-

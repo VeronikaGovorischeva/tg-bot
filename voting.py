@@ -262,10 +262,29 @@ async def vote_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             date_str = WEEKDAYS[t["date"].weekday()]
         time_str = f"{t['start_hour']:02d}:{t['start_min']:02d}"
-        desc = t.get("description")
-        desc_str = f" ({desc})" if desc else ""
+        button_text = f"{date_str} {time_str}"
+
+        extra_info = []
+
+        # Add coach info
+        if t.get("with_coach"):
+            extra_info.append("З тренером")
+
+        # Add location
+        location = t.get("location", "")
+        if location and location.lower() != "наукма" and not location.startswith("http"):
+            extra_info.append(location)
+
+        # Add description
+        description = t.get("description", "")
+        if description:
+            extra_info.append(description)
+
+        if extra_info:
+            button_text += f" ({' - '.join(extra_info)})"
+
         keyboard.append(
-            [InlineKeyboardButton(f"{date_str} {time_str} {desc_str}", callback_data=f"training_vote_{idx}")])
+            [InlineKeyboardButton(button_text, callback_data=f"training_vote_{idx}")])
 
     context.user_data["vote_options"] = filtered
 
@@ -396,45 +415,49 @@ async def view_votes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     one_time = load_trainings("one_time_trainings", {})
     constant = load_trainings("constant_trainings", {})
 
-    def get_training_team_label(training_id):
+    def get_training_info(training_id):
         if training_id.startswith("const_"):
             for tid, tr in constant.items():
                 tr_id = f"const_{tr['weekday']}_{tr['start_hour']:02d}:{tr['start_min']:02d}"
                 if tr_id == training_id:
-                    return tr.get("team", "Both")
+                    return tr
         else:
             for tid, tr in one_time.items():
                 tr_id = f"{tr['date']}_{tr['start_hour']:02d}:{tr['start_min']:02d}"
                 if tr_id == training_id:
-                    return tr.get("team", "Both")
-        return "Both"
-
-    def get_training_description(training_id):
-        if training_id.startswith("const_"):
-            for tid, tr in constant.items():
-                tr_id = f"const_{tr['weekday']}_{tr['start_hour']:02d}:{tr['start_min']:02d}"
-                if tr_id == training_id:
-                    return tr.get("description", "")
-        else:
-            for tid, tr in one_time.items():
-                tr_id = f"{tr['date']}_{tr['start_hour']:02d}:{tr['start_min']:02d}"
-                if tr_id == training_id:
-                    return tr.get("description", "")
-        return ""
-
-    def format_team(team):
-        if team == "Male":
-            return " (чоловіча команда)"
-        elif team == "Female":
-            return " (жіноча команда)"
-        return ""
+                    return tr
+        return {}
 
     keyboard = []
     for i, tid in enumerate(context.user_data["view_votes_options"]):
-        team = get_training_team_label(tid)
-        description = get_training_description(tid)
-        desc_part = f" ({description})" if description else ""
-        label = format_training_id(tid) + format_team(team) + desc_part
+        training_info = get_training_info(tid)
+
+        base_label = format_training_id(tid)
+
+        extra_info = []
+
+        team = training_info.get("team", "Both")
+        if team == "Male":
+            extra_info.append("чоловіча команда")
+        elif team == "Female":
+            extra_info.append("жіноча команда")
+
+        if training_info.get("with_coach"):
+            extra_info.append("З тренером")
+
+        location = training_info.get("location", "")
+        if location and location.lower() != "наукма" and not location.startswith("http"):
+            extra_info.append(location)
+
+        description = training_info.get("description", "")
+        if description:
+            extra_info.append(description)
+
+        if extra_info:
+            label = f"{base_label} ({' - '.join(extra_info)})"
+        else:
+            label = base_label
+
         keyboard.append([InlineKeyboardButton(label, callback_data=f"view_votes_{i}")])
 
     await update.message.reply_text(
@@ -461,7 +484,7 @@ def format_training_id(tid: str) -> str:
                 parts = tid.split("_")
                 weekday_index = int(parts[1])
                 time_str = parts[2]
-                return f"{WEEKDAYS[weekday_index]} о {time_str} (регулярне)"
+                return f"{WEEKDAYS[weekday_index]} о {time_str}"
             return tid
         except:
             return tid
