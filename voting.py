@@ -174,13 +174,18 @@ async def send_vote_to_users(context: ContextTypes.DEFAULT_TYPE, vote_data: dict
                 InlineKeyboardButton("❌ Ні", callback_data=f"general_vote_{vote_id}_no")
             ]
         ])
-    elif vote_data["type"] == VoteType.MULTIPLE_CHOICE:
+    elif vote_data["type"] in [VoteType.MULTIPLE_CHOICE_SINGLE, VoteType.MULTIPLE_CHOICE_MULTI]:
         buttons = []
         for i, option in enumerate(vote_data["options"]):
             buttons.append([InlineKeyboardButton(
                 f"{i + 1}. {option}",
                 callback_data=f"general_vote_{vote_id}_option_{i}"
             )])
+
+        if vote_data["type"] == VoteType.MULTIPLE_CHOICE_MULTI:
+            buttons.append(
+                [InlineKeyboardButton("✅ Підтвердити вибір", callback_data=f"general_vote_{vote_id}_confirm")])
+
         keyboard = InlineKeyboardMarkup(buttons)
     else:
         keyboard = InlineKeyboardMarkup([
@@ -192,8 +197,11 @@ async def send_vote_to_users(context: ContextTypes.DEFAULT_TYPE, vote_data: dict
 
     if vote_data["type"] == VoteType.TEXT_RESPONSE:
         message += "Натисніть кнопку нижче, щоб залишити відповідь."
+    elif vote_data["type"] == VoteType.MULTIPLE_CHOICE_MULTI:
+        message += "Оберіть один або кілька варіантів, потім натисніть 'Підтвердити вибір':"
     else:
         message += "Оберіть ваш варіант:"
+
     count = 0
     for uid, user_info in users.items():
         if vote_data["team"] in [user_info.get("team"), "Both"]:
@@ -208,11 +216,9 @@ async def send_vote_to_users(context: ContextTypes.DEFAULT_TYPE, vote_data: dict
                 print(f"❌ Помилка надсилання голосування до {uid}: {e}")
 
     return count
-    await update.message.reply_text("Оберіть тренування для голосування:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 async def handle_general_vote_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle responses to general votes"""
     query = update.callback_query
     await query.answer()
 
@@ -224,7 +230,6 @@ async def handle_general_vote_response(update: Update, context: ContextTypes.DEF
     users = load_data("users", {})
     user_name = users.get(user_id, {}).get("name", "Невідомий")
 
-    # Load vote data
     votes = load_data(GENERAL_VOTES_FILE, {})
     if vote_id not in votes:
         await query.edit_message_text("⚠️ Голосування не знайдено.")
@@ -232,51 +237,96 @@ async def handle_general_vote_response(update: Update, context: ContextTypes.DEF
 
     vote_data = votes[vote_id]
 
-    # Check if vote is still active
     if not vote_data.get("is_active", True):
         await query.edit_message_text("⚠️ Це голосування вже закрито.")
         return
 
-    # Load existing responses
     responses = load_data(GENERAL_VOTE_RESPONSES_FILE, {})
     if vote_id not in responses:
         responses[vote_id] = {}
 
-    # Handle response based on type
     if response_type == "text":
-        # For text responses, we need to handle this differently
         context.user_data[f"text_vote_{vote_id}"] = True
         await query.edit_message_text(
             f"Введіть вашу відповідь на питання:\n\n{vote_data['question']}"
         )
         return
 
-    # Handle yes/no and multiple choice
-    if response_type in ["yes", "no"]:
+    elif response_type in ["yes", "no"]:
         response_value = "Так" if response_type == "yes" else "Ні"
+
+        responses[vote_id][user_id] = {
+            "name": user_name,
+            "response": response_value,
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+        save_data(responses, GENERAL_VOTE_RESPONSES_FILE)
+
+        await query.edit_message_text(f"✅ Ваш голос '{response_value}' збережено!")
+
     elif response_type == "option":
         option_index = int(data_parts[4])
-        response_value = vote_data["options"][option_index]
-    else:
-        await query.edit_message_text("⚠️ Невідомий тип відповіді.")
-        return
+        option_value = vote_data["options"][option_index]
 
-    # Save response
-    responses[vote_id][user_id] = {
-        "name": user_name,
-        "response": response_value,
-        "timestamp": datetime.datetime.now().isoformat()
-    }
-    save_data(responses, GENERAL_VOTE_RESPONSES_FILE)
+        if vote_data["type"] == VoteType.MULTIPLE_CHOICE_SINGLE:
+            responses[vote_id][user_id] = {
+                "name": user_name,
+                "response": option_value,
+                "timestamp": datetime.datetime.now().isoformat()
+            }
+            save_data(responses, GENERAL_VOTE_RESPONSES_FILE)
+            await query.edit_message_text(f"✅ Ваш вибір '{option_value}' збережено!")
 
-    await query.edit_message_text(f"✅ Ваш голос '{response_value}' збережено!")
+        elif vote_data["type"] == VoteType.MULTIPLE_CHOICE_MULTI:
+            if f"multi_vote_{vote_id}" not in context.user_data:
+                context.user_data[f"multi_vote_{vote_id}"] = set()
+
+            selected = context.user_data[f"multi_vote_{vote_id}"]
+            if option_value in selected:
+                selected.remove(option_value)
+            else:
+                selected.add(option_value)
+            buttons = []
+            for i, option in enumerate(vote_data["options"]):
+                prefix = "☑️" if option in selected else "☐"
+                buttons.append([InlineKeyboardButton(
+                    f"{prefix} {i + 1}. {option}",
+                    callback_data=f"general_vote_{vote_id}_option_{i}"
+                )])
+
+            buttons.append(
+                [InlineKeyboardButton("✅ Підтвердити вибір", callback_data=f"general_vote_{vote_id}_confirm")])
+
+            await query.edit_message_text(
+                f"{vote_data['question']}\n\n"
+                f"Оберіть один або кілька варіантів, потім натисніть 'Підтвердити вибір':",
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
+
+    elif response_type == "confirm":
+        if f"multi_vote_{vote_id}" in context.user_data:
+            selected = list(context.user_data[f"multi_vote_{vote_id}"])
+            if selected:
+                response_value = ", ".join(selected)
+
+                responses[vote_id][user_id] = {
+                    "name": user_name,
+                    "response": response_value,
+                    "timestamp": datetime.datetime.now().isoformat()
+                }
+                save_data(responses, GENERAL_VOTE_RESPONSES_FILE)
+
+                del context.user_data[f"multi_vote_{vote_id}"]
+
+                await query.edit_message_text(f"✅ Ваш вибір '{response_value}' збережено!")
+            else:
+                await query.answer("⚠️ Оберіть хоча б один варіант!", show_alert=True)
+        else:
+            await query.edit_message_text("⚠️ Помилка: дані не знайдено.")
 
 
 async def handle_text_vote_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle text input for text-based votes"""
     user_id = str(update.message.from_user.id)
-
-    # Find which vote this user is responding to
     active_vote = None
     for key in context.user_data:
         if key.startswith("text_vote_"):
@@ -286,7 +336,7 @@ async def handle_text_vote_input(update: Update, context: ContextTypes.DEFAULT_T
             break
 
     if not active_vote:
-        return  # Not a text vote response
+        return
 
     users = load_data("users", {})
     user_name = users.get(user_id, {}).get("name", "Невідомий")
@@ -298,7 +348,6 @@ async def handle_text_vote_input(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text("⚠️ Голосування не знайдено.")
         return
 
-    # Save text response
     responses = load_data(GENERAL_VOTE_RESPONSES_FILE, {})
     if active_vote not in responses:
         responses[active_vote] = {}
@@ -314,7 +363,6 @@ async def handle_text_vote_input(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def close_vote(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Close a vote manually"""
     if not is_authorized(update.message.from_user.id):
         await update.message.reply_text("⛔ У вас немає прав для закриття голосувань.")
         return
@@ -384,14 +432,23 @@ async def vote_results(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if no_names:
             message += f"❌ Ні: {', '.join(no_names)}\n"
 
-    elif vote_data["type"] == VoteType.MULTIPLE_CHOICE:
+    elif vote_data["type"] in [VoteType.MULTIPLE_CHOICE_SINGLE, VoteType.MULTIPLE_CHOICE_MULTI]:
+        # Count responses for each option
         option_counts = {}
         for option in vote_data["options"]:
             option_counts[option] = 0
 
         for response in vote_responses.values():
-            if response["response"] in option_counts:
-                option_counts[response["response"]] += 1
+            if vote_data["type"] == VoteType.MULTIPLE_CHOICE_MULTI:
+                # Split by comma for multi-select
+                selected_options = [opt.strip() for opt in response["response"].split(",")]
+                for opt in selected_options:
+                    if opt in option_counts:
+                        option_counts[opt] += 1
+            else:
+                # Single choice
+                if response["response"] in option_counts:
+                    option_counts[response["response"]] += 1
 
         for option, count in option_counts.items():
             percentage = (count / len(vote_responses) * 100) if vote_responses else 0
