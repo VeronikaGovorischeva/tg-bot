@@ -12,7 +12,6 @@ from voting import *
 from commands import send_message_command, handle_send_message_team_selection, handle_send_message_input, notify_debtors
 import os
 
-from voting import vote_for, vote_other_name, handle_vote_other_selection, handle_vote_other_cast
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -88,8 +87,14 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("view_payments", view_payments))
     app.add_handler(CallbackQueryHandler(handle_view_payment_selection, pattern=r"^view_payment_\d+"))
     app.add_handler(CallbackQueryHandler(handle_vote_other_cast, pattern=r"^vote_other_cast_(yes|no)$"))
-    app.add_handler(CommandHandler("unlock_training", unlock_training))
-    app.add_handler(CallbackQueryHandler(handle_unlock_selection, pattern=r"^unlock_training_\d+"))
+    # Enhanced voting system
+    app.add_handler(create_general_vote_handler())
+    app.add_handler(CommandHandler("close_vote", close_vote))
+    app.add_handler(CommandHandler("vote_results", vote_results))
+    app.add_handler(CallbackQueryHandler(handle_general_vote_response, pattern=r"^general_vote_"))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_vote_input))
+    # app.add_handler(CommandHandler("unlock_training", unlock_training))
+    # app.add_handler(CallbackQueryHandler(handle_unlock_selection, pattern=r"^unlock_training_\d+"))
     app.add_handler(CommandHandler("notify_debtors", notify_debtors))
     app.add_handler(ConversationHandler(
         entry_points=[CommandHandler("vote_for", vote_for)],
