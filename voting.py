@@ -1,10 +1,6 @@
-import json
-import os
 import datetime
-from pymongo import MongoClient
-
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, CallbackQueryHandler, MessageHandler, \
+from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, MessageHandler, \
     filters
 from data import load_data, save_data
 from trainings import get_next_week_trainings
@@ -12,8 +8,7 @@ from telegram.ext import ConversationHandler
 from validation import is_authorized
 import uuid
 
-# Conversation states for general voting
-VOTE_TYPE, VOTE_QUESTION, VOTE_OPTIONS, VOTE_TEAM, VOTE_DURATION, VOTE_ANONYMITY = range(200, 206)
+VOTE_TYPE, VOTE_QUESTION, VOTE_OPTIONS, VOTE_TEAM = range(200, 204)
 
 GENERAL_VOTES_FILE = "general_votes"
 GENERAL_VOTE_RESPONSES_FILE = "general_vote_responses"
@@ -49,26 +44,6 @@ class VoteManager:
             [InlineKeyboardButton("Обидві команди", callback_data="general_vote_team_Both")]
         ])
 
-    def create_duration_keyboard(self):
-        return InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("1 день", callback_data="vote_duration_1"),
-                InlineKeyboardButton("3 дні", callback_data="vote_duration_3")
-            ],
-            [
-                InlineKeyboardButton("7 днів", callback_data="vote_duration_7"),
-                InlineKeyboardButton("Без ліміту", callback_data="vote_duration_0")
-            ]
-        ])
-
-    def create_anonymity_keyboard(self):
-        return InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("Анонімне", callback_data="vote_anon_true"),
-                InlineKeyboardButton("З іменами", callback_data="vote_anon_false")
-            ]
-        ])
-
 
 vote_manager = VoteManager()
 
@@ -80,8 +55,7 @@ async def create_vote(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         return ConversationHandler.END
 
     await update.message.reply_text(
-        "📊 Створення нового голосування\n\n"
-        "Крок 1/6: Оберіть тип голосування:",
+        "Створення нового голосування\n\nОберіть тип голосування:",
         reply_markup=vote_manager.create_vote_type_keyboard()
     )
     return VOTE_TYPE
@@ -95,11 +69,7 @@ async def handle_vote_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     vote_type = query.data.replace("vote_type_", "")
     context.user_data['general_vote_type'] = vote_type
 
-    type_name = vote_manager.vote_types[vote_type]
-    await query.edit_message_text(
-        f"✅ Обрано тип: {type_name}\n\n"
-        "Крок 2/6: Введіть питання для голосування:"
-    )
+    await query.edit_message_text("Введіть питання для голосування:")
     return VOTE_QUESTION
 
 
@@ -112,8 +82,7 @@ async def handle_vote_question(update: Update, context: ContextTypes.DEFAULT_TYP
 
     if vote_type == VoteType.MULTIPLE_CHOICE:
         await update.message.reply_text(
-            f"✅ Питання: {question}\n\n"
-            "Крок 3/6: Введіть варіанти відповідей (кожен з нового рядка, максимум 5 варіантів):\n\n"
+            "Введіть варіанти відповідей (кожен з нового рядка, максимум 5 варіантів):\n\n"
             "Приклад:\n"
             "Варіант 1\n"
             "Варіант 2\n"
@@ -124,8 +93,7 @@ async def handle_vote_question(update: Update, context: ContextTypes.DEFAULT_TYP
         # Skip options for Yes/No and text responses
         context.user_data['general_vote_options'] = []
         await update.message.reply_text(
-            f"✅ Питання: {question}\n\n"
-            "Крок 3/6: Оберіть для якої команди це голосування:",
+            "Оберіть для якої команди це голосування:",
             reply_markup=vote_manager.create_team_selection_keyboard()
         )
         return VOTE_TEAM
@@ -150,76 +118,30 @@ async def handle_vote_options(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     context.user_data['general_vote_options'] = options
 
-    options_display = '\n'.join([f"{i + 1}. {opt}" for i, opt in enumerate(options)])
     await update.message.reply_text(
-        f"✅ Варіанти відповідей:\n{options_display}\n\n"
-        "Крок 4/6: Оберіть для якої команди це голосування:",
+        "Оберіть для якої команди це голосування:",
         reply_markup=vote_manager.create_team_selection_keyboard()
     )
     return VOTE_TEAM
 
 
 async def handle_vote_team(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Handle team selection"""
     query = update.callback_query
     await query.answer()
 
     team = query.data.replace("general_vote_team_", "")
-    context.user_data['general_vote_team'] = team
 
-    team_display = {"Male": "чоловічої команди", "Female": "жіночої команди", "Both": "обох команд"}[team]
-
-    await query.edit_message_text(
-        f"✅ Команда: {team_display}\n\n"
-        "Крок 5/6: Оберіть тривалість голосування:",
-        reply_markup=vote_manager.create_duration_keyboard()
-    )
-    return VOTE_DURATION
-
-
-async def handle_vote_duration(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Handle duration selection"""
-    query = update.callback_query
-    await query.answer()
-
-    duration = int(query.data.replace("vote_duration_", ""))
-    context.user_data['general_vote_duration'] = duration
-
-    duration_display = f"{duration} дні(в)" if duration > 0 else "без ліміту часу"
-
-    await query.edit_message_text(
-        f"✅ Тривалість: {duration_display}\n\n"
-        "Крок 6/6: Оберіть тип голосування:",
-        reply_markup=vote_manager.create_anonymity_keyboard()
-    )
-    return VOTE_ANONYMITY
-
-
-async def handle_vote_anonymity(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Handle anonymity selection and create the vote"""
-    query = update.callback_query
-    await query.answer()
-
-    is_anonymous = query.data == "vote_anon_true"
-
-    # Create vote ID and save vote data
     vote_id = str(uuid.uuid4())[:8]
     now = datetime.datetime.now()
-
-    # Calculate end time
-    duration = context.user_data['general_vote_duration']
-    end_time = now + datetime.timedelta(days=duration) if duration > 0 else None
 
     vote_data = {
         "vote_id": vote_id,
         "question": context.user_data['general_vote_question'],
         "type": context.user_data['general_vote_type'],
         "options": context.user_data.get('general_vote_options', []),
-        "team": context.user_data['general_vote_team'],
+        "team": team,
         "creator_id": str(query.from_user.id),
         "created_at": now.isoformat(),
-        "end_time": end_time.isoformat() if end_time else None,
-        "is_anonymous": is_anonymous,
         "is_active": True
     }
 
@@ -231,17 +153,14 @@ async def handle_vote_anonymity(update: Update, context: ContextTypes.DEFAULT_TY
     # Send vote to users
     await send_vote_to_users(context, vote_data)
 
-    # Confirmation message
-    anonymity_text = "анонімне" if is_anonymous else "з іменами"
-    duration_text = f"{duration} дні(в)" if duration > 0 else "без ліміту часу"
+    # Confirmation message - SIMPLIFIED
+    team_display = {"Male": "чоловічої команди", "Female": "жіночої команди", "Both": "обох команд"}[team]
 
     await query.edit_message_text(
         f"✅ Голосування створено!\n\n"
-        f"🆔 ID: {vote_id}\n"
-        f"❓ Питання: {vote_data['question']}\n"
-        f"⏱️ Тривалість: {duration_text}\n"
-        f"🔒 Тип: {anonymity_text}\n\n"
-        f"📤 Повідомлення надіслано учасникам команди."
+        f"Питання: {vote_data['question']}\n"
+        f"Команда: {team_display}\n\n"
+        f"Повідомлення надіслано учасникам команди.\n\n"
     )
 
     return ConversationHandler.END
@@ -277,10 +196,6 @@ async def send_vote_to_users(context: ContextTypes.DEFAULT_TYPE, vote_data: dict
     message = f"📊 Нове голосування!\n\n"
     message += f"❓ {vote_data['question']}\n\n"
 
-    if vote_data["end_time"]:
-        end_date = datetime.datetime.fromisoformat(vote_data["end_time"])
-        message += f"⏰ До: {end_date.strftime('%d.%m.%Y %H:%M')}\n\n"
-
     if vote_data["type"] == VoteType.TEXT_RESPONSE:
         message += "Натисніть кнопку нижче, щоб залишити відповідь."
     else:
@@ -301,7 +216,6 @@ async def send_vote_to_users(context: ContextTypes.DEFAULT_TYPE, vote_data: dict
                 print(f"❌ Помилка надсилання голосування до {uid}: {e}")
 
     return count
-
     await update.message.reply_text("Оберіть тренування для голосування:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -331,13 +245,6 @@ async def handle_general_vote_response(update: Update, context: ContextTypes.DEF
         await query.edit_message_text("⚠️ Це голосування вже закрито.")
         return
 
-    # Check if vote has expired
-    if vote_data.get("end_time"):
-        end_time = datetime.datetime.fromisoformat(vote_data["end_time"])
-        if datetime.datetime.now() > end_time:
-            await query.edit_message_text("⚠️ Час голосування минув.")
-            return
-
     # Load existing responses
     responses = load_data(GENERAL_VOTE_RESPONSES_FILE, {})
     if vote_id not in responses:
@@ -348,8 +255,7 @@ async def handle_general_vote_response(update: Update, context: ContextTypes.DEF
         # For text responses, we need to handle this differently
         context.user_data[f"text_vote_{vote_id}"] = True
         await query.edit_message_text(
-            f"📝 Введіть вашу відповідь на питання:\n\n"
-            f"❓ {vote_data['question']}"
+            f"Введіть вашу відповідь на питання:\n\n{vote_data['question']}"
         )
         return
 
@@ -365,7 +271,7 @@ async def handle_general_vote_response(update: Update, context: ContextTypes.DEF
 
     # Save response
     responses[vote_id][user_id] = {
-        "name": user_name if not vote_data["is_anonymous"] else "Анонім",
+        "name": user_name,
         "response": response_value,
         "timestamp": datetime.datetime.now().isoformat()
     }
@@ -406,7 +312,7 @@ async def handle_text_vote_input(update: Update, context: ContextTypes.DEFAULT_T
         responses[active_vote] = {}
 
     responses[active_vote][user_id] = {
-        "name": user_name if not vote_data["is_anonymous"] else "Анонім",
+        "name": user_name,
         "response": update.message.text,
         "timestamp": datetime.datetime.now().isoformat()
     }
@@ -470,7 +376,6 @@ async def vote_results(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message += f"🆔 ID: {vote_id}\n"
     message += f"❓ Питання: {vote_data['question']}\n"
     message += f"👥 Всього відповідей: {len(vote_responses)}\n"
-    message += f"🔒 Тип: {'Анонімне' if vote_data['is_anonymous'] else 'З іменами'}\n"
     message += f"✅ Статус: {'Активне' if vote_data.get('is_active', True) else 'Закрито'}\n\n"
 
     if vote_data["type"] == VoteType.YES_NO:
@@ -478,14 +383,14 @@ async def vote_results(update: Update, context: ContextTypes.DEFAULT_TYPE):
         no_count = len(vote_responses) - yes_count
         message += f"✅ Так: {yes_count}\n❌ Ні: {no_count}\n\n"
 
-        if not vote_data["is_anonymous"]:
-            yes_names = [r["name"] for r in vote_responses.values() if r["response"] == "Так"]
-            no_names = [r["name"] for r in vote_responses.values() if r["response"] == "Ні"]
+        # Always show names
+        yes_names = [r["name"] for r in vote_responses.values() if r["response"] == "Так"]
+        no_names = [r["name"] for r in vote_responses.values() if r["response"] == "Ні"]
 
-            if yes_names:
-                message += f"✅ Так: {', '.join(yes_names)}\n"
-            if no_names:
-                message += f"❌ Ні: {', '.join(no_names)}\n"
+        if yes_names:
+            message += f"✅ Так: {', '.join(yes_names)}\n"
+        if no_names:
+            message += f"❌ Ні: {', '.join(no_names)}\n"
 
     elif vote_data["type"] == VoteType.MULTIPLE_CHOICE:
         option_counts = {}
@@ -500,16 +405,15 @@ async def vote_results(update: Update, context: ContextTypes.DEFAULT_TYPE):
             percentage = (count / len(vote_responses) * 100) if vote_responses else 0
             message += f"• {option}: {count} ({percentage:.1f}%)\n"
 
-        if not vote_data["is_anonymous"]:
-            message += "\n📝 Детальні відповіді:\n"
-            for response in vote_responses.values():
-                message += f"• {response['name']}: {response['response']}\n"
+        # Always show detailed responses with names
+        message += "\n📝 Детальні відповіді:\n"
+        for response in vote_responses.values():
+            message += f"• {response['name']}: {response['response']}\n"
 
     else:  # TEXT_RESPONSE
-        message += "📝 Відповіді:\n\n"
+        message += "Відповіді:\n\n"
         for i, response in enumerate(vote_responses.values(), 1):
-            name = response["name"] if not vote_data["is_anonymous"] else f"Учасник {i}"
-            message += f"{i}. {name}: {response['response']}\n\n"
+            message += f"{i}. {response['name']}: {response['response']}\n\n"
 
     # Split long messages
     if len(message) > 4000:
@@ -534,9 +438,7 @@ def create_general_vote_handler():
             VOTE_TYPE: [CallbackQueryHandler(handle_vote_type, pattern=r"^vote_type_")],
             VOTE_QUESTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_vote_question)],
             VOTE_OPTIONS: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_vote_options)],
-            VOTE_TEAM: [CallbackQueryHandler(handle_vote_team, pattern=r"^general_vote_team_")],
-            VOTE_DURATION: [CallbackQueryHandler(handle_vote_duration, pattern=r"^vote_duration_")],
-            VOTE_ANONYMITY: [CallbackQueryHandler(handle_vote_anonymity, pattern=r"^vote_anon_")]
+            VOTE_TEAM: [CallbackQueryHandler(handle_vote_team, pattern=r"^general_vote_team_")]
         },
         fallbacks=[CommandHandler("cancel", cancel_vote_creation)]
     )
@@ -771,18 +673,6 @@ async def handle_training_vote_selection(update: Update, context: ContextTypes.D
 
     training_id, training = vote_options[idx]
 
-    # Не знаю чи потрібно
-    # vote_options = context.user_data.get("vote_options")
-    # if not vote_options:
-    #     await query.edit_message_text("Помилка: не знайдено тренувань.")
-    #     return
-    # idx = int(query.data.replace("training_vote_", ""))
-    # try:
-    #     _, training_id, training = vote_options[idx]
-    # except IndexError:
-    #     await query.edit_message_text("Помилка: тренування не знайдено.")
-    #     return
-
     votes = load_data('votes', DEFAULT_VOTES_STRUCTURE)
     if training_id in votes["votes"]:
         yes_votes = sum(1 for v in votes["votes"][training_id].values() if v["vote"] == "yes")
@@ -942,7 +832,6 @@ def is_vote_active(vote_id, today):
         return False
 
 
-# maybe change a bit
 def format_training_id(tid: str) -> str:
     if tid.startswith("Понеділок") or tid.startswith("const_"):
         try:
@@ -986,6 +875,7 @@ async def handle_view_votes_selection(update: Update, context: ContextTypes.DEFA
     message += f"❌ Не буде ({len(no_list)}):\n" + ("\n".join(no_list) if no_list else "Ніхто")
 
     await query.edit_message_text(message)
+
 
 async def unlock_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update.message.from_user.id):
