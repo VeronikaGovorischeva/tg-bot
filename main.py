@@ -4,6 +4,7 @@ from telegram import Update
 import asyncio
 
 from payments import *
+from games import *
 from trainings import create_training_add_handler, add_training, next_training, last_training, week_trainings, \
     reset_today_constant_trainings_status
 from registration import create_registration_handler
@@ -11,7 +12,6 @@ from notifier import check_voting_and_notify, start_voting
 from voting import *
 from commands import send_message_command, handle_send_message_team_selection, handle_send_message_input, notify_debtors
 import os
-
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -53,6 +53,17 @@ if __name__ == "__main__":
     # Add training(only for admins)
     app.add_handler(create_training_add_handler())
     app.add_handler(CommandHandler("add_training", add_training))
+
+    app.add_handler(create_game_add_handler())
+    app.add_handler(CommandHandler("next_game", next_game))
+    app.add_handler(CommandHandler("list_games", list_games))
+    app.add_handler(CommandHandler("week_games", week_games))
+    app.add_handler(CommandHandler("delete_game", delete_game))
+    app.add_handler(CommandHandler("game_vote", game_vote))
+    app.add_handler(CommandHandler("game_results", game_results))
+    app.add_handler(CallbackQueryHandler(handle_list_games, pattern=r"^list_games_"))
+    app.add_handler(CallbackQueryHandler(handle_delete_game_confirmation, pattern=r"^delete_game_"))
+    app.add_handler(CallbackQueryHandler(handle_game_vote, pattern=r"^game_vote_(yes|no)_"))
 
     # Next training
     app.add_handler(CommandHandler("next_training", next_training))
@@ -109,19 +120,15 @@ if __name__ == "__main__":
     app.add_handler(CallbackQueryHandler(handle_vote_other_cast, pattern=r"^vote_other_cast_(yes|no)$"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_send_message_input))
 
-    # app.add_handler(CommandHandler("next_game", next_game))
-    # app.add_handler(CommandHandler("check_debt", check_debt))
-    #
-    # app.add_handler(CommandHandler("list_games", list_games))
-    # app.add_handler(CommandHandler("delete_game", delete_game_command))
-    # app.add_handler(CallbackQueryHandler(delete_game_callback, pattern=r"^delete_"))
-    # app.add_handler(CallbackQueryHandler(list_games_callback, pattern=r"^list_"))
-
     scheduler = BackgroundScheduler()
     loop = asyncio.get_event_loop()
-    scheduler.add_job(lambda: loop.call_soon_threadsafe(lambda: asyncio.create_task(start_voting(app))), 'cron', hour=15, minute=0)
-    scheduler.add_job(lambda: loop.call_soon_threadsafe(lambda: asyncio.create_task(check_voting_and_notify(app))),'cron', hour=16, minute=0)
-    scheduler.add_job(lambda: loop.call_soon_threadsafe(lambda: asyncio.create_task(reset_today_constant_trainings_status())),'cron', hour=19, minute=0)
+    scheduler.add_job(lambda: loop.call_soon_threadsafe(lambda: asyncio.create_task(start_voting(app))), 'cron',
+                      hour=15, minute=0)
+    scheduler.add_job(lambda: loop.call_soon_threadsafe(lambda: asyncio.create_task(check_voting_and_notify(app))),
+                      'cron', hour=16, minute=0)
+    scheduler.add_job(
+        lambda: loop.call_soon_threadsafe(lambda: asyncio.create_task(reset_today_constant_trainings_status())), 'cron',
+        hour=19, minute=0)
 
     scheduler.start()
 
