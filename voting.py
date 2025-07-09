@@ -16,7 +16,8 @@ GENERAL_VOTE_RESPONSES_FILE = "general_vote_responses"
 
 class VoteType:
     YES_NO = "yes_no"
-    MULTIPLE_CHOICE = "multiple_choice"
+    MULTIPLE_CHOICE_SINGLE = "multiple_choice_single"
+    MULTIPLE_CHOICE_MULTI = "multiple_choice_multi"
     TEXT_RESPONSE = "text_response"
 
 
@@ -24,14 +25,18 @@ class VoteManager:
     def __init__(self):
         self.vote_types = {
             VoteType.YES_NO: "Так/Ні",
-            VoteType.MULTIPLE_CHOICE: "Множинний вибір",
+            VoteType.MULTIPLE_CHOICE_SINGLE: "Множинний вибір (1 відповідь)",
+            VoteType.MULTIPLE_CHOICE_MULTI: "Множинний вибір (багато відповідей)",
             VoteType.TEXT_RESPONSE: "Текстова відповідь"
         }
 
     def create_vote_type_keyboard(self):
         return InlineKeyboardMarkup([
             [InlineKeyboardButton("Так/Ні", callback_data=f"vote_type_{VoteType.YES_NO}")],
-            [InlineKeyboardButton("Множинний вибір", callback_data=f"vote_type_{VoteType.MULTIPLE_CHOICE}")],
+            [InlineKeyboardButton("Множинний вибір (1 відповідь)",
+                                  callback_data=f"vote_type_{VoteType.MULTIPLE_CHOICE_SINGLE}")],
+            [InlineKeyboardButton("Множинний вибір (багато відповідей)",
+                                  callback_data=f"vote_type_{VoteType.MULTIPLE_CHOICE_MULTI}")],
             [InlineKeyboardButton("Текстова відповідь", callback_data=f"vote_type_{VoteType.TEXT_RESPONSE}")]
         ])
 
@@ -49,7 +54,6 @@ vote_manager = VoteManager()
 
 
 async def create_vote(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Start the vote creation process"""
     if not is_authorized(update.message.from_user.id):
         await update.message.reply_text("⛔ У вас немає прав для створення голосувань.")
         return ConversationHandler.END
@@ -62,7 +66,6 @@ async def create_vote(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 
 async def handle_vote_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Handle vote type selection"""
     query = update.callback_query
     await query.answer()
 
@@ -74,13 +77,12 @@ async def handle_vote_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 async def handle_vote_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Handle question input"""
     question = update.message.text
     context.user_data['general_vote_question'] = question
 
     vote_type = context.user_data['general_vote_type']
 
-    if vote_type == VoteType.MULTIPLE_CHOICE:
+    if vote_type in [VoteType.MULTIPLE_CHOICE_SINGLE, VoteType.MULTIPLE_CHOICE_MULTI]:
         await update.message.reply_text(
             "Введіть варіанти відповідей (кожен з нового рядка, максимум 5 варіантів):\n\n"
             "Приклад:\n"
@@ -90,7 +92,6 @@ async def handle_vote_question(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         return VOTE_OPTIONS
     else:
-        # Skip options for Yes/No and text responses
         context.user_data['general_vote_options'] = []
         await update.message.reply_text(
             "Оберіть для якої команди це голосування:",
@@ -100,7 +101,6 @@ async def handle_vote_question(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def handle_vote_options(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Handle multiple choice options input"""
     options_text = update.message.text
     options = [opt.strip() for opt in options_text.split('\n') if opt.strip()]
 
@@ -145,15 +145,12 @@ async def handle_vote_team(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "is_active": True
     }
 
-    # Save vote
     votes = load_data(GENERAL_VOTES_FILE, {})
     votes[vote_id] = vote_data
     save_data(votes, GENERAL_VOTES_FILE)
 
-    # Send vote to users
     await send_vote_to_users(context, vote_data)
 
-    # Confirmation message - SIMPLIFIED
     team_display = {"Male": "чоловічої команди", "Female": "жіночої команди", "Both": "обох команд"}[team]
 
     await query.edit_message_text(
@@ -167,11 +164,9 @@ async def handle_vote_team(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 async def send_vote_to_users(context: ContextTypes.DEFAULT_TYPE, vote_data: dict):
-    """Send vote notification to relevant users"""
     users = load_data("users", {})
     vote_id = vote_data["vote_id"]
 
-    # Create keyboard based on vote type
     if vote_data["type"] == VoteType.YES_NO:
         keyboard = InlineKeyboardMarkup([
             [
@@ -187,12 +182,11 @@ async def send_vote_to_users(context: ContextTypes.DEFAULT_TYPE, vote_data: dict
                 callback_data=f"general_vote_{vote_id}_option_{i}"
             )])
         keyboard = InlineKeyboardMarkup(buttons)
-    else:  # TEXT_RESPONSE
+    else:
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("📝 Відповісти", callback_data=f"general_vote_{vote_id}_text")]
         ])
 
-    # Format message
     message = f"📊 Нове голосування!\n\n"
     message += f"❓ {vote_data['question']}\n\n"
 
@@ -200,8 +194,6 @@ async def send_vote_to_users(context: ContextTypes.DEFAULT_TYPE, vote_data: dict
         message += "Натисніть кнопку нижче, щоб залишити відповідь."
     else:
         message += "Оберіть ваш варіант:"
-
-    # Send to users
     count = 0
     for uid, user_info in users.items():
         if vote_data["team"] in [user_info.get("team"), "Both"]:
