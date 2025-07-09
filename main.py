@@ -93,8 +93,8 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("vote_results", vote_results))
     app.add_handler(CallbackQueryHandler(handle_general_vote_response, pattern=r"^general_vote_"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_vote_input))
-    # app.add_handler(CommandHandler("unlock_training", unlock_training))
-    # app.add_handler(CallbackQueryHandler(handle_unlock_selection, pattern=r"^unlock_training_\d+"))
+    app.add_handler(CommandHandler("unlock_training", unlock_training))
+    app.add_handler(CallbackQueryHandler(handle_unlock_selection, pattern=r"^unlock_training_\d+"))
     app.add_handler(CommandHandler("notify_debtors", notify_debtors))
     app.add_handler(ConversationHandler(
         entry_points=[CommandHandler("vote_for", vote_for)],

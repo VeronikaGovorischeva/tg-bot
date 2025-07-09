@@ -986,3 +986,64 @@ async def handle_view_votes_selection(update: Update, context: ContextTypes.DEFA
     message += f"❌ Не буде ({len(no_list)}):\n" + ("\n".join(no_list) if no_list else "Ніхто")
 
     await query.edit_message_text(message)
+
+async def unlock_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_authorized(update.message.from_user.id):
+        await update.message.reply_text("У вас немає прав для цієї команди.")
+        return
+
+    one_time = load_data("one_time_trainings", {})
+    constant = load_data("constant_trainings", {})
+
+    options = []
+
+    for tid, t in one_time.items():
+        if t.get("team") in ["Male", "Female"]:
+            label = f"{t['date']} о {t['start_hour']:02d}:{t['start_min']:02d}"
+            options.append((tid, "one_time", label))
+
+    for tid, t in constant.items():
+        if t.get("team") in ["Male", "Female"]:
+            weekday = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"][t["weekday"]]
+            label = f"{weekday} о {t['start_hour']:02d}:{t['start_min']:02d}"
+            options.append((tid, "constant", label))
+
+    if not options:
+        await update.message.reply_text("Немає тренувань, які потребують розблокування.")
+        return
+
+    context.user_data["unlock_options"] = options
+
+    keyboard = [
+        [InlineKeyboardButton(label, callback_data=f"unlock_training_{i}")]
+        for i, (_, _, label) in enumerate(options)
+    ]
+
+    await update.message.reply_text(
+        "Оберіть тренування, щоб дозволити голосування обом командам:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+async def handle_unlock_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    idx = int(query.data.replace("unlock_training_", ""))
+    options = context.user_data.get("unlock_options", [])
+
+    if idx >= len(options):
+        await query.edit_message_text("⚠️ Помилка: тренування не знайдено.")
+        return
+
+    tid, ttype, _ = options[idx]
+    trainings = load_data("one_time_trainings" if ttype == "one_time" else "constant_trainings", {})
+
+    if tid not in trainings:
+        await query.edit_message_text("⚠️ Тренування не знайдено.")
+        return
+
+    trainings[tid]["team"] = "Both"
+    save_data(trainings, "one_time_trainings" if ttype == "one_time" else "constant_trainings")
+
+    await query.edit_message_text("✅ Тренування оновлено. Тепер обидві команди можуть голосувати.")
