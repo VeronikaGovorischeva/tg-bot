@@ -909,18 +909,18 @@ async def vote_for(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def vote_other_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Admin enters name - step 2: show all available votes for admin's team"""
+    """Admin enters name - step 2: show all available votes for both teams"""
     name = update.message.text.strip()
     context.user_data["vote_other_name"] = name
     context.user_data["vote_other_id"] = f"admin_{uuid.uuid4().hex[:8]}"
 
-    # Get admin's team
-    admin_team = context.user_data.get("admin_team", "Both")
-
     all_votes = []
 
-    # 1. Get training votes for admin's team
-    trainings = get_next_week_trainings(admin_team)
+    # 1. Get training votes for both teams
+    male_trainings = get_next_week_trainings("Male")
+    female_trainings = get_next_week_trainings("Female")
+    both_trainings = get_next_week_trainings("Both")
+    all_trainings = male_trainings + female_trainings + both_trainings
     today = datetime.datetime.today().date()
     current_hour = datetime.datetime.now().hour
 
