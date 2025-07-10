@@ -24,31 +24,21 @@ async def error(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 if __name__ == "__main__":
     app = Application.builder().token(BOT_TOKEN).build()
-    # game_add_handler = ConversationHandler(
-    #     entry_points=[CommandHandler('add_game', add_game_command)],
-    #     states={
-    #         GAME_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, game_date)],
-    #         GAME_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, game_time)],
-    #         GAME_LOCATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, game_location)],
-    #         GAME_OPPONENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, game_opponent)],
-    #         GAME_TEAM: [CallbackQueryHandler(game_team, pattern=r"^add_")]
-    #     },
-    #     fallbacks=[CommandHandler('cancel', cancel)]
-    # )
-    # edit_game_handler = ConversationHandler(
-    #     entry_points=[CommandHandler('edit_game', edit_game_command)],
-    #     states={
-    #         EDIT_GAME_FIELD: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_game_field)],
-    #         EDIT_GAME_NEW_VALUE: [
-    #             MessageHandler(filters.TEXT & ~filters.COMMAND, edit_game_value),
-    #             CallbackQueryHandler(edit_game_value, pattern=r"^edit_")
-    #         ]
-    #     },
-    #     fallbacks=[CommandHandler('cancel', cancel)]
-    # )
 
     # Registration
     app.add_handler(create_registration_handler())
+
+    app.add_handler(ConversationHandler(
+        entry_points=[CommandHandler("vote_for", vote_for)],
+        states={
+            VOTE_OTHER_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, vote_other_name)],
+            VOTE_OTHER_SELECT: [CallbackQueryHandler(handle_vote_other_selection, pattern=r"^vote_other_\d+")]
+        },
+        fallbacks=[]
+    ))
+
+    # Final step after training is selected
+    app.add_handler(CallbackQueryHandler(handle_vote_other_cast, pattern=r"^vote_other_cast_(yes|no)$"))
 
     # Add training(only for admins)
     app.add_handler(create_training_add_handler())
@@ -59,7 +49,7 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("list_games", list_games))
     app.add_handler(CommandHandler("week_games", week_games))
     app.add_handler(CommandHandler("delete_game", delete_game))
-    app.add_handler(CommandHandler("game_vote", game_vote))
+    # app.add_handler(CommandHandler("game_vote", game_vote))
     app.add_handler(CommandHandler("game_results", game_results))
     app.add_handler(CallbackQueryHandler(handle_list_games, pattern=r"^list_games_"))
     app.add_handler(CallbackQueryHandler(handle_delete_game_confirmation, pattern=r"^delete_game_"))
@@ -78,12 +68,16 @@ if __name__ == "__main__":
     # app.add_handler(edit_game_handler)
 
     # Voting
-    app.add_handler(CommandHandler("vote_training", vote_training))
+    # app.add_handler(CommandHandler("vote_training", vote_training))
+
+    app.add_handler(CommandHandler("vote", unified_vote_command))
+    app.add_handler(CallbackQueryHandler(handle_unified_vote_selection, pattern=r"^unified_vote_\d+$"))
+
     app.add_handler(CommandHandler("view_votes", view_votes))
 
     app.add_handler(CallbackQueryHandler(handle_vote, pattern=r"^vote_(yes|no)_"))
     app.add_handler(CallbackQueryHandler(handle_view_votes_selection, pattern=r"^view_votes_\d+"))
-    app.add_handler(CallbackQueryHandler(handle_training_vote_selection, pattern=r"^training_vote_\d+"))
+    # app.add_handler(CallbackQueryHandler(handle_training_vote_selection, pattern=r"^training_vote_\d+"))
     app.add_handler(CommandHandler("send_message", send_message_command))
     app.add_handler(CallbackQueryHandler(handle_send_message_team_selection, pattern=r"^send_team_"))
 
@@ -107,17 +101,6 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("unlock_training", unlock_training))
     app.add_handler(CallbackQueryHandler(handle_unlock_selection, pattern=r"^unlock_training_\d+"))
     app.add_handler(CommandHandler("notify_debtors", notify_debtors))
-    app.add_handler(ConversationHandler(
-        entry_points=[CommandHandler("vote_for", vote_for)],
-        states={
-            VOTE_OTHER_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, vote_other_name)],
-            VOTE_OTHER_SELECT: [CallbackQueryHandler(handle_vote_other_selection, pattern=r"^vote_other_\d+")]
-        },
-        fallbacks=[]
-    ))
-
-    # Final step after training is selected
-    app.add_handler(CallbackQueryHandler(handle_vote_other_cast, pattern=r"^vote_other_cast_(yes|no)$"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_send_message_input))
 
     scheduler = BackgroundScheduler()

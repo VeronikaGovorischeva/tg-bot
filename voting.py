@@ -10,8 +10,15 @@ import uuid
 
 VOTE_TYPE, VOTE_QUESTION, VOTE_OPTIONS, VOTE_TEAM = range(200, 204)
 
+WEEKDAYS = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"]
+REGISTRATION_FILE = "users"
+TRAINING_VOTES_FILE = "votes"
 GENERAL_VOTES_FILE = "general_votes"
 GENERAL_VOTE_RESPONSES_FILE = "general_vote_responses"
+GAMES_FILE = "games"
+GAME_VOTES_FILE = "game_votes"
+DEFAULT_VOTES_STRUCTURE = {"votes": {}}
+VOTES_LIMIT = 14
 
 
 class VoteType:
@@ -51,6 +58,393 @@ class VoteManager:
 
 
 vote_manager = VoteManager()
+
+
+class UnifiedVoteManager:
+    """Manages all types of voting in a unified interface"""
+
+    def __init__(self):
+        self.vote_types = {
+            "training": "🏐 Тренування",
+            "game": "🏆 Гра",
+            "general": "📊 Загальне голосування"
+        }
+
+    def get_all_available_votes(self, user_id: str, user_team: str):
+        """Get all available votes for a user"""
+        all_votes = []
+
+        # Get training votes
+        training_votes = self._get_training_votes(user_id, user_team)
+        all_votes.extend(training_votes)
+
+        # Get game votes
+        game_votes = self._get_game_votes(user_id, user_team)
+        all_votes.extend(game_votes)
+
+        # Get general votes
+        general_votes = self._get_general_votes(user_id, user_team)
+        all_votes.extend(general_votes)
+
+        return all_votes
+
+    def _get_training_votes(self, user_id: str, user_team: str):
+        """Get available training votes"""
+        today = datetime.datetime.today().date()
+        current_hour = datetime.datetime.now().hour
+        trainings = get_next_week_trainings(user_team)
+        training_votes = []
+
+        for training in trainings:
+            start_voting = training.get("start_voting")
+
+            if training["type"] == "one-time":
+                try:
+                    if isinstance(start_voting, str):
+                        start_date = datetime.datetime.strptime(start_voting, "%d.%m.%Y").date()
+                    else:
+                        start_date = start_voting
+                except Exception:
+                    continue
+
+                if (start_date < today or (start_date == today and current_hour >= 15)):
+                    date_str = training["date"] if isinstance(training["date"], str) else training["date"].strftime(
+                        "%d.%m.%Y")
+                    training_id = f"{date_str}_{training['start_hour']:02d}:{training['start_min']:02d}"
+
+                    # Check if voting is not full
+                    votes = load_data(TRAINING_VOTES_FILE, DEFAULT_VOTES_STRUCTURE)
+                    yes_votes = 0
+                    if training_id in votes["votes"]:
+                        yes_votes = sum(1 for v in votes["votes"][training_id].values() if v["vote"] == "yes")
+
+                    if yes_votes < VOTES_LIMIT:
+                        label = self._format_training_label(training, training_id)
+                        training_votes.append({
+                            "type": "training",
+                            "id": training_id,
+                            "label": label,
+                            "data": training
+                        })
+            else:
+                if isinstance(start_voting, int):
+                    voting_started = ((today.weekday() - start_voting) % 7) <= 6
+                    if voting_started:
+                        training_id = f"const_{training['weekday']}_{training['start_hour']:02d}:{training['start_min']:02d}"
+
+                        # Check if voting is not full
+                        votes = load_data(TRAINING_VOTES_FILE, DEFAULT_VOTES_STRUCTURE)
+                        yes_votes = 0
+                        if training_id in votes["votes"]:
+                            yes_votes = sum(1 for v in votes["votes"][training_id].values() if v["vote"] == "yes")
+
+                        if yes_votes < VOTES_LIMIT:
+                            label = self._format_training_label(training, training_id)
+                            training_votes.append({
+                                "type": "training",
+                                "id": training_id,
+                                "label": label,
+                                "data": training
+                            })
+
+        return training_votes
+
+    def _get_game_votes(self, user_id: str, user_team: str):
+        """Get available game votes"""
+        games = load_data(GAMES_FILE, {})
+        now = datetime.datetime.now()
+        game_votes = []
+
+        for game in games.values():
+            if game.get("team") not in [user_team, "Both"]:
+                continue
+
+            try:
+                game_datetime = datetime.datetime.strptime(f"{game['date']} {game['time']}", "%d.%m.%Y %H:%M")
+                if game_datetime > now:
+                    # Check if user hasn't voted yet or show current vote
+                    game_id = game['id']
+                    label = self._format_game_label(game)
+                    game_votes.append({
+                        "type": "game",
+                        "id": game_id,
+                        "label": label,
+                        "data": game
+                    })
+            except ValueError:
+                continue
+
+        return game_votes
+
+    def _get_general_votes(self, user_id: str, user_team: str):
+        """Get available general votes"""
+        votes = load_data(GENERAL_VOTES_FILE, {})
+        general_votes = []
+
+        for vote_id, vote_data in votes.items():
+            if not vote_data.get("is_active", True):
+                continue
+
+            if vote_data.get("team") not in [user_team, "Both"]:
+                continue
+
+            label = f"📊 {vote_data['question'][:50]}{'...' if len(vote_data['question']) > 50 else ''}"
+            general_votes.append({
+                "type": "general",
+                "id": vote_id,
+                "label": label,
+                "data": vote_data
+            })
+
+        return general_votes
+
+    def _format_training_label(self, training, training_id):
+        """Format training label for display"""
+        if training["type"] == "one-time":
+            date_str = training["date"].strftime("%d.%m.%Y") if isinstance(training["date"], datetime.date) else \
+                training["date"]
+        else:
+            date_str = WEEKDAYS[
+                training["date"].weekday() if isinstance(training["date"], datetime.date) else training["weekday"]]
+
+        time_str = f"{training['start_hour']:02d}:{training['start_min']:02d}"
+        base_label = f"🏐 {date_str} {time_str}"
+
+        extra_info = []
+        if training.get("with_coach"):
+            extra_info.append("З тренером")
+
+        location = training.get("location", "")
+        if location and location.lower() != "наукма" and not location.startswith("http"):
+            extra_info.append(location)
+
+        description = training.get("description", "")
+        if description:
+            extra_info.append(description)
+
+        if extra_info:
+            base_label += f" ({' - '.join(extra_info)})"
+
+        return base_label
+
+    def _format_game_label(self, game):
+        """Format game label for display"""
+        type_names = {
+            "friendly": "Товариський матч",
+            "tournament": "Турнір",
+            "league": "Чемпіонат/Ліга",
+            "training_match": "Тренувальний матч"
+        }
+
+        type_name = type_names.get(game.get('type'), game.get('type', 'Гра'))
+        label = f"🏆 {type_name} - {game['date']} {game['time']}"
+        label += f" проти {game['opponent']}"
+
+        return label
+
+
+unified_vote_manager = UnifiedVoteManager()
+
+
+async def unified_vote_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Main unified voting command"""
+    user_id = str(update.message.from_user.id)
+    user_data = load_data(REGISTRATION_FILE)
+
+    if user_id not in user_data or "team" not in user_data[user_id]:
+        await update.message.reply_text("Будь ласка, завершіть реєстрацію перед голосуванням.")
+        return
+
+    # Check for unpaid payments
+    payments = load_data("payments", {})
+    unpaid = [p for p in payments.values() if p["user_id"] == user_id and not p.get("paid", False)]
+
+    if len(unpaid) >= 2:
+        await update.message.reply_text(
+            "❌ У тебе два або більше неоплачених тренувань. Спочатку погаси борг через /pay_debt.")
+        return
+    elif len(unpaid) == 1:
+        await update.message.reply_text(
+            "⚠️ У тебе є неоплачене тренування. Будь ласка, погаси борг через /pay_debt якнайшвидше.")
+
+    user_team = user_data[user_id]["team"]
+    all_votes = unified_vote_manager.get_all_available_votes(user_id, user_team)
+
+    if not all_votes:
+        await update.message.reply_text("Наразі немає доступних голосувань.")
+        return
+
+    # Create keyboard with all available votes
+    keyboard = []
+    context.user_data["unified_vote_options"] = all_votes
+
+    for idx, vote in enumerate(all_votes):
+        keyboard.append([InlineKeyboardButton(vote["label"], callback_data=f"unified_vote_{idx}")])
+
+    await update.message.reply_text(
+        "📊 Доступні голосування:\n\nОберіть голосування:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+async def handle_unified_vote_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle selection from unified vote list"""
+    query = update.callback_query
+    await query.answer()
+
+    idx = int(query.data.replace("unified_vote_", ""))
+    vote_options = context.user_data.get("unified_vote_options", [])
+
+    if idx >= len(vote_options):
+        await query.edit_message_text("⚠️ Помилка: вибране голосування більше не доступне.")
+        return
+
+    selected_vote = vote_options[idx]
+    vote_type = selected_vote["type"]
+    vote_id = selected_vote["id"]
+    vote_data = selected_vote["data"]
+
+    if vote_type == "training":
+        await handle_training_vote_interaction(query, context, vote_id, vote_data)
+    elif vote_type == "game":
+        await handle_game_vote_interaction(query, context, vote_id, vote_data)
+    elif vote_type == "general":
+        await handle_general_vote_interaction(query, context, vote_id, vote_data)
+
+
+async def handle_training_vote_interaction(query, context, training_id, training_data):
+    """Handle training vote interaction"""
+    user_id = str(query.from_user.id)
+
+    votes = load_data(TRAINING_VOTES_FILE, DEFAULT_VOTES_STRUCTURE)
+    if training_id in votes["votes"]:
+        yes_votes = sum(1 for v in votes["votes"][training_id].values() if v["vote"] == "yes")
+        if yes_votes >= VOTES_LIMIT:
+            await query.edit_message_text("⚠️ Досягнуто максимум голосів 'так'. Голосування закрито.")
+            return
+
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ Так", callback_data=f"vote_yes_{training_id}"),
+            InlineKeyboardButton("❌ Ні", callback_data=f"vote_no_{training_id}")
+        ]
+    ]
+
+    training_info = format_training_id(training_id)
+
+    current_vote = None
+    if training_id in votes["votes"] and user_id in votes["votes"][training_id]:
+        current_vote = votes["votes"][training_id][user_id]["vote"]
+
+    message = f"🏐 Тренування: {training_info}\n"
+    if current_vote:
+        message += f"Ваш поточний голос: {'БУДУ' if current_vote == 'yes' else 'НЕ БУДУ'}\n"
+    message += "Чи будете на тренуванні?"
+
+    await query.edit_message_text(message, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+async def handle_game_vote_interaction(query, context, game_id, game_data):
+    """Handle game vote interaction"""
+    user_id = str(query.from_user.id)
+
+    # Create voting keyboard
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ Буду", callback_data=f"game_vote_yes_{game_id}"),
+            InlineKeyboardButton("❌ Не буду", callback_data=f"game_vote_no_{game_id}")
+        ]
+    ]
+
+    # Game type mapping
+    type_names = {
+        "friendly": "Товариський матч",
+        "tournament": "Турнір",
+        "league": "Чемпіонат/Ліга",
+        "training_match": "Тренувальний матч"
+    }
+
+    type_name = type_names.get(game_data.get('type'), game_data.get('type', 'Гра'))
+
+    message = f"🏆 {type_name}\n\n"
+    message += f"📅 {game_data['date']} о {game_data['time']}\n"
+    message += f"🏆 Проти: {game_data['opponent']}\n"
+    message += f"📍 Місце: {game_data['location']}\n\n"
+
+    # Check current vote
+    game_votes = load_data(GAME_VOTES_FILE, {})
+    current_vote = None
+    if game_id in game_votes and user_id in game_votes[game_id]:
+        current_vote = game_votes[game_id][user_id]["vote"]
+        message += f"Ваш поточний голос: {'БУДУ' if current_vote == 'yes' else 'НЕ БУДУ'}\n"
+
+    message += "Чи будете брати участь у цій грі?"
+
+    await query.edit_message_text(message, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+async def handle_general_vote_interaction(query, context, vote_id, vote_data):
+    """Handle general vote interaction"""
+    user_id = str(query.from_user.id)
+
+    if vote_data["type"] == "yes_no":
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ Так", callback_data=f"general_vote_{vote_id}_yes"),
+                InlineKeyboardButton("❌ Ні", callback_data=f"general_vote_{vote_id}_no")
+            ]
+        ])
+    elif vote_data["type"] in ["multiple_choice_single", "multiple_choice_multi"]:
+        buttons = []
+        for i, option in enumerate(vote_data["options"]):
+            buttons.append([InlineKeyboardButton(
+                f"{i + 1}. {option}",
+                callback_data=f"general_vote_{vote_id}_option_{i}"
+            )])
+
+        if vote_data["type"] == "multiple_choice_multi":
+            buttons.append(
+                [InlineKeyboardButton("✅ Підтвердити вибір", callback_data=f"general_vote_{vote_id}_confirm")])
+
+        keyboard = InlineKeyboardMarkup(buttons)
+    else:  # text_response
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📝 Відповісти", callback_data=f"general_vote_{vote_id}_text")]
+        ])
+
+    message = f"📊 {vote_data['question']}\n\n"
+
+    if vote_data["type"] == "text_response":
+        message += "Натисніть кнопку нижче, щоб залишити відповідь."
+    elif vote_data["type"] == "multiple_choice_multi":
+        message += "Оберіть один або кілька варіантів, потім натисніть 'Підтвердити вибір':"
+    else:
+        message += "Оберіть ваш варіант:"
+
+    # Check if user already voted
+    responses = load_data(GENERAL_VOTE_RESPONSES_FILE, {})
+    if vote_id in responses and user_id in responses[vote_id]:
+        current_response = responses[vote_id][user_id]["response"]
+        message += f"\n\nВаша поточна відповідь: {current_response}"
+
+    await query.edit_message_text(message, reply_markup=keyboard)
+
+
+def format_training_id(tid: str) -> str:
+    """Format training ID for display"""
+    if tid.startswith("const_"):
+        try:
+            parts = tid.split("_")
+            weekday_index = int(parts[1])
+            time_str = parts[2]
+            return f"{WEEKDAYS[weekday_index]} о {time_str}"
+        except:
+            return tid
+    else:
+        try:
+            return f"{tid[:10]} о {tid[11:]}"
+        except:
+            return tid
 
 
 async def create_vote(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -493,120 +887,339 @@ def create_general_vote_handler():
     )
 
 
-WEEKDAYS = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"]
-
-REGISTRATION_FILE = "users"
 VOTES_FILE = "training_votes"
-DEFAULT_VOTES_STRUCTURE = {"votes": {}}
-VOTES_LIMIT = 14
 
 VOTE_OTHER_NAME, VOTE_OTHER_SELECT = range(2)
 
 
 async def vote_for(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command to vote for someone else - step 1: enter name"""
     if not is_authorized(update.message.from_user.id):
         await update.message.reply_text("У вас немає прав для цієї команди.")
         return ConversationHandler.END
 
-    context.user_data["vote_other_id"] = f"admin_{uuid.uuid4().hex[:8]}"
-    await update.message.reply_text("Введіть ім'я або прізвище людини, за яку голосуєте:")
+    # Store admin's team for filtering
+    user_data = load_data("users")
+    admin_id = str(update.message.from_user.id)
+    admin_team = user_data.get(admin_id, {}).get("team", "Both")
+    context.user_data["admin_team"] = admin_team
+
+    await update.message.reply_text("Введіть ім'я або прізвище людини, за яку ви хочете проголосувати:")
     return VOTE_OTHER_NAME
 
 
 async def vote_other_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    name = update.message.text
+    """Admin enters name - step 2: show all available votes for admin's team"""
+    name = update.message.text.strip()
     context.user_data["vote_other_name"] = name
+    context.user_data["vote_other_id"] = f"admin_{uuid.uuid4().hex[:8]}"
 
-    # Load trainings
-    user_data = load_data("users")
-    admin_id = str(update.message.from_user.id)
-    team = user_data.get(admin_id, {}).get("team", "Both")
+    # Get admin's team
+    admin_team = context.user_data.get("admin_team", "Both")
 
-    trainings = get_next_week_trainings(team)
+    all_votes = []
+
+    # 1. Get training votes for admin's team
+    trainings = get_next_week_trainings(admin_team)
     today = datetime.datetime.today().date()
     current_hour = datetime.datetime.now().hour
-    filtered = []
 
     for t in trainings:
         start_voting = t.get("start_voting")
         if t["type"] == "one-time":
             try:
                 start_date = datetime.datetime.strptime(start_voting, "%d.%m.%Y").date()
-                if (start_date < today or (start_date == today and current_hour >= 18)):
+                if (start_date < today or (start_date == today and current_hour >= 15)):
                     tid = f"{t['date']}_{t['start_hour']:02d}:{t['start_min']:02d}"
-                    filtered.append((tid, t))
+
+                    # Check if not full
+                    votes = load_data(TRAINING_VOTES_FILE, DEFAULT_VOTES_STRUCTURE)
+                    yes_votes = 0
+                    if tid in votes["votes"]:
+                        yes_votes = sum(1 for v in votes["votes"][tid].values() if v["vote"] == "yes")
+
+                    if yes_votes < VOTES_LIMIT:
+                        date_str = t["date"].strftime("%d.%m.%Y") if isinstance(t["date"], datetime.date) else t["date"]
+                        label = f"🏐 {date_str} {t['start_hour']:02d}:{t['start_min']:02d}"
+                        if t.get("with_coach"):
+                            label += " (З тренером)"
+                        all_votes.append(("training", tid, label, t))
             except:
                 continue
         else:
             if isinstance(start_voting, int) and (
-                    start_voting < today.weekday() or (start_voting == today.weekday() and current_hour >= 18)
+                    start_voting < today.weekday() or (start_voting == today.weekday() and current_hour >= 15)
             ):
                 tid = f"const_{t['weekday']}_{t['start_hour']:02d}:{t['start_min']:02d}"
-                filtered.append((tid, t))
 
-    if not filtered:
-        await update.message.reply_text("Немає тренувань для голосування.")
+                # Check if not full
+                votes = load_data(TRAINING_VOTES_FILE, DEFAULT_VOTES_STRUCTURE)
+                yes_votes = 0
+                if tid in votes["votes"]:
+                    yes_votes = sum(1 for v in votes["votes"][tid].values() if v["vote"] == "yes")
+
+                if yes_votes < VOTES_LIMIT:
+                    label = f"🏐 {WEEKDAYS[t['weekday']]} {t['start_hour']:02d}:{t['start_min']:02d}"
+                    if t.get("with_coach"):
+                        label += " (З тренером)"
+                    all_votes.append(("training", tid, label, t))
+
+    # 2. Get game votes for admin's team
+    games = load_data(GAMES_FILE, {})
+    now = datetime.datetime.now()
+
+    for game in games.values():
+        if game.get("team") not in [admin_team, "Both"]:
+            continue
+
+        try:
+            game_datetime = datetime.datetime.strptime(f"{game['date']} {game['time']}", "%d.%m.%Y %H:%M")
+            if game_datetime > now:
+                type_names = {
+                    "friendly": "Товариський матч",
+                    "tournament": "Турнір",
+                    "league": "Чемпіонат/Ліга",
+                    "training_match": "Тренувальний матч"
+                }
+                type_name = type_names.get(game.get('type'), game.get('type', 'Гра'))
+                label = f"🏆 {type_name} - {game['date']} {game['time']} проти {game['opponent']}"
+                all_votes.append(("game", game['id'], label, game))
+        except ValueError:
+            continue
+
+    # 3. Get general votes for admin's team
+    general_votes = load_data(GENERAL_VOTES_FILE, {})
+    for vote_id, vote_data in general_votes.items():
+        if not vote_data.get("is_active", True):
+            continue
+        if vote_data.get("team") not in [admin_team, "Both"]:
+            continue
+
+        label = f"📊 {vote_data['question'][:50]}{'...' if len(vote_data['question']) > 50 else ''}"
+        all_votes.append(("general", vote_id, label, vote_data))
+
+    if not all_votes:
+        await update.message.reply_text("Немає доступних голосувань.")
         return ConversationHandler.END
 
-    context.user_data["vote_other_trainings"] = filtered
+    context.user_data["vote_other_options"] = all_votes
 
     keyboard = [
-        [InlineKeyboardButton(
-            f"{t['date'].strftime('%d.%m.%Y') if t['type'] == 'one-time' else WEEKDAYS[t['weekday']]} {t['start_hour']:02d}:{t['start_min']:02d}",
-            callback_data=f"vote_other_{i}"
-        )] for i, (_, t) in enumerate(filtered)
+        [InlineKeyboardButton(label, callback_data=f"vote_other_{i}")]
+        for i, (_, _, label, _) in enumerate(all_votes)
     ]
 
     await update.message.reply_text(
-        "Оберіть тренування:",
+        f"Ви голосуєте за: {name}\n\n📊 Оберіть голосування:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
     return VOTE_OTHER_SELECT
 
 
 async def handle_vote_other_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin selects vote type - step 3: choose vote value"""
     query = update.callback_query
     await query.answer()
 
     idx = int(query.data.replace("vote_other_", ""))
-    selected = context.user_data.get("vote_other_trainings", [])[idx]
-    training_id, _ = selected
-    context.user_data["vote_other_training_id"] = training_id
+    options = context.user_data.get("vote_other_options", [])
 
-    keyboard = [
-        [
-            InlineKeyboardButton("✅ Так", callback_data="vote_other_cast_yes"),
-            InlineKeyboardButton("❌ Ні", callback_data="vote_other_cast_no")
+    if idx >= len(options):
+        await query.edit_message_text("⚠️ Помилка: вибране голосування більше не доступне.")
+        return ConversationHandler.END
+
+    vote_type, vote_id, label, vote_data = options[idx]
+    name = context.user_data["vote_other_name"]
+
+    context.user_data["vote_other_type"] = vote_type
+    context.user_data["vote_other_vote_id"] = vote_id
+    context.user_data["vote_other_vote_data"] = vote_data
+
+    if vote_type == "training":
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ Так (БУДЕ)", callback_data="vote_other_cast_yes"),
+                InlineKeyboardButton("❌ Ні (НЕ БУДЕ)", callback_data="vote_other_cast_no")
+            ]
         ]
-    ]
+        message = f"Голосування за: {name}\n🏐 Тренування: {format_training_id(vote_id)}\n\nЯкий голос поставити?"
 
-    await query.edit_message_text(
-        f"Ви обрали тренування: {format_training_id(training_id)}\n"
-        "Який голос ви хочете поставити?",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    elif vote_type == "game":
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ Так (БУДЕ)", callback_data="vote_other_cast_yes"),
+                InlineKeyboardButton("❌ Ні (НЕ БУДЕ)", callback_data="vote_other_cast_no")
+            ]
+        ]
+        type_names = {
+            "friendly": "Товариський матч",
+            "tournament": "Турнір",
+            "league": "Чемпіонат/Ліга",
+            "training_match": "Тренувальний матч"
+        }
+        type_name = type_names.get(vote_data.get('type'), vote_data.get('type', 'Гра'))
+        message = f"Голосування за: {name}\n🏆 {type_name}\n📅 {vote_data['date']} о {vote_data['time']}\n🏆 Проти: {vote_data['opponent']}\n\nЯкий голос поставити?"
+
+    elif vote_type == "general":
+        if vote_data["type"] == "yes_no":
+            keyboard = [
+                [
+                    InlineKeyboardButton("✅ Так", callback_data="vote_other_cast_yes"),
+                    InlineKeyboardButton("❌ Ні", callback_data="vote_other_cast_no")
+                ]
+            ]
+            message = f"Голосування за: {name}\n📊 {vote_data['question']}\n\nЯкий голос поставити?"
+
+        elif vote_data["type"] in ["multiple_choice_single", "multiple_choice_multi"]:
+            keyboard = []
+            for i, option in enumerate(vote_data["options"]):
+                keyboard.append([InlineKeyboardButton(
+                    f"{i + 1}. {option}",
+                    callback_data=f"vote_other_cast_option_{i}"
+                )])
+            message = f"Голосування за: {name}\n📊 {vote_data['question']}\n\nОберіть варіант:"
+
+        else:  # text_response
+            await query.edit_message_text(
+                f"Голосування за: {name}\n📊 {vote_data['question']}\n\nВведіть текстову відповідь у наступному повідомленні:"
+            )
+            return ConversationHandler.END
+
+    await query.edit_message_text(message, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 async def handle_vote_other_cast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Final step - cast the vote"""
+    # Handle text input for text responses
+    if hasattr(update, 'message') and update.message:
+        name = context.user_data["vote_other_name"]
+        vote_id = context.user_data["vote_other_vote_id"]
+        user_id = context.user_data["vote_other_id"]
+        response_text = update.message.text
+
+        # Save general text vote
+        responses = load_data(GENERAL_VOTE_RESPONSES_FILE, {})
+        if vote_id not in responses:
+            responses[vote_id] = {}
+        responses[vote_id][user_id] = {
+            "name": name,
+            "response": response_text,
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+        save_data(responses, GENERAL_VOTE_RESPONSES_FILE)
+
+        await update.message.reply_text(f"✅ Текстова відповідь за '{name}' збережена: '{response_text}'")
+        return ConversationHandler.END
+
+    # Handle callback query
     query = update.callback_query
     await query.answer()
 
-    vote_choice = "yes" if "yes" in query.data else "no"
     name = context.user_data["vote_other_name"]
-    training_id = context.user_data["vote_other_training_id"]
+    vote_type = context.user_data["vote_other_type"]
+    vote_id = context.user_data["vote_other_vote_id"]
+    vote_data = context.user_data["vote_other_vote_data"]
     user_id = context.user_data["vote_other_id"]
 
-    votes = load_data("votes", DEFAULT_VOTES_STRUCTURE)
-    if training_id not in votes["votes"]:
-        votes["votes"][training_id] = {}
+    if query.data.startswith("vote_other_cast_option_"):
+        # Multiple choice option selected
+        option_idx = int(query.data.replace("vote_other_cast_option_", ""))
+        response_value = vote_data["options"][option_idx]
 
-    votes["votes"][training_id][user_id] = {"name": name, "vote": vote_choice}
-    save_data(votes, "votes")
+        # Save general vote
+        responses = load_data(GENERAL_VOTE_RESPONSES_FILE, {})
+        if vote_id not in responses:
+            responses[vote_id] = {}
+        responses[vote_id][user_id] = {
+            "name": name,
+            "response": response_value,
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+        save_data(responses, GENERAL_VOTE_RESPONSES_FILE)
 
-    vote_text = "БУДУ" if vote_choice == "yes" else "НЕ БУДУ"
-    await query.edit_message_text(
-        f"✅ Голос за '{name}' збережено як '{vote_text}' на тренування {format_training_id(training_id)}.")
+        await query.edit_message_text(f"✅ Голос за '{name}' збережено як '{response_value}'")
 
+    elif query.data == "vote_other_cast_yes":
+        if vote_type == "training":
+            # Save training vote
+            votes = load_data(TRAINING_VOTES_FILE, DEFAULT_VOTES_STRUCTURE)
+            if vote_id not in votes["votes"]:
+                votes["votes"][vote_id] = {}
+            votes["votes"][vote_id][user_id] = {"name": name, "vote": "yes"}
+            save_data(votes, TRAINING_VOTES_FILE)
+
+            await query.edit_message_text(
+                f"✅ Голос за '{name}' збережено як 'БУДЕ' на тренування {format_training_id(vote_id)}")
+
+        elif vote_type == "game":
+            # Save game vote
+            game_votes = load_data(GAME_VOTES_FILE, {})
+            if vote_id not in game_votes:
+                game_votes[vote_id] = {}
+            game_votes[vote_id][user_id] = {
+                "name": name,
+                "vote": "yes",
+                "timestamp": datetime.datetime.now().isoformat()
+            }
+            save_data(game_votes, GAME_VOTES_FILE)
+
+            await query.edit_message_text(f"✅ Голос за '{name}' збережено як 'БУДЕ' на гру")
+
+        elif vote_type == "general":
+            # Save general vote
+            responses = load_data(GENERAL_VOTE_RESPONSES_FILE, {})
+            if vote_id not in responses:
+                responses[vote_id] = {}
+            responses[vote_id][user_id] = {
+                "name": name,
+                "response": "Так",
+                "timestamp": datetime.datetime.now().isoformat()
+            }
+            save_data(responses, GENERAL_VOTE_RESPONSES_FILE)
+
+            await query.edit_message_text(f"✅ Голос за '{name}' збережено як 'Так'")
+
+    elif query.data == "vote_other_cast_no":
+        if vote_type == "training":
+            # Save training vote
+            votes = load_data(TRAINING_VOTES_FILE, DEFAULT_VOTES_STRUCTURE)
+            if vote_id not in votes["votes"]:
+                votes["votes"][vote_id] = {}
+            votes["votes"][vote_id][user_id] = {"name": name, "vote": "no"}
+            save_data(votes, TRAINING_VOTES_FILE)
+
+            await query.edit_message_text(
+                f"✅ Голос за '{name}' збережено як 'НЕ БУДЕ' на тренування {format_training_id(vote_id)}")
+
+        elif vote_type == "game":
+            # Save game vote
+            game_votes = load_data(GAME_VOTES_FILE, {})
+            if vote_id not in game_votes:
+                game_votes[vote_id] = {}
+            game_votes[vote_id][user_id] = {
+                "name": name,
+                "vote": "no",
+                "timestamp": datetime.datetime.now().isoformat()
+            }
+            save_data(game_votes, GAME_VOTES_FILE)
+
+            await query.edit_message_text(f"✅ Голос за '{name}' збережено як 'НЕ БУДЕ' на гру")
+
+        elif vote_type == "general":
+            # Save general vote
+            responses = load_data(GENERAL_VOTE_RESPONSES_FILE, {})
+            if vote_id not in responses:
+                responses[vote_id] = {}
+            responses[vote_id][user_id] = {
+                "name": name,
+                "response": "Ні",
+                "timestamp": datetime.datetime.now().isoformat()
+            }
+            save_data(responses, GENERAL_VOTE_RESPONSES_FILE)
+
+            await query.edit_message_text(f"✅ Голос за '{name}' збережено як 'Ні'")
+
+    return ConversationHandler.END
 
 def generate_training_id(training):
     """Generate a consistent training ID for both vote_training command and notifier"""
