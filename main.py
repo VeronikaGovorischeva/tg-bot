@@ -34,7 +34,8 @@ if __name__ == "__main__":
             VOTE_OTHER_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, vote_other_name)],
             VOTE_OTHER_SELECT: [CallbackQueryHandler(handle_vote_other_selection, pattern=r"^vote_other_\d+")]
         },
-        fallbacks=[]
+        fallbacks=[],
+        allow_reentry=True
     ))
 
     # Final step after training is selected
@@ -73,7 +74,9 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("vote", unified_vote_command))
     app.add_handler(CallbackQueryHandler(handle_unified_vote_selection, pattern=r"^unified_vote_\d+$"))
 
-    app.add_handler(CommandHandler("view_votes", view_votes))
+    # app.add_handler(CommandHandler("view_votes", view_votes))
+    app.add_handler(CommandHandler("view_votes", unified_view_votes))
+    app.add_handler(CallbackQueryHandler(handle_unified_view_selection, pattern=r"^view_unified_\d+$"))
 
     app.add_handler(CallbackQueryHandler(handle_vote, pattern=r"^vote_(yes|no)_"))
     app.add_handler(CallbackQueryHandler(handle_view_votes_selection, pattern=r"^view_votes_\d+"))
