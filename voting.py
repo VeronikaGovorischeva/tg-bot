@@ -14,8 +14,8 @@ WEEKDAYS = ["Понеділок", "Вівторок", "Середа", "Четв�
 VOTES_FILE = "training_votes"
 REGISTRATION_FILE = "users"
 TRAINING_VOTES_FILE = "votes"
+GENERAL_FILE = "general"
 GENERAL_VOTES_FILE = "general_votes"
-GENERAL_VOTE_RESPONSES_FILE = "general_vote_responses"
 GAMES_FILE = "games"
 GAME_VOTES_FILE = "game_votes"
 DEFAULT_VOTES_STRUCTURE = {"votes": {}}
@@ -167,7 +167,7 @@ class UnifiedVoteManager:
         return game_votes
 
     def _get_general_votes(self, user_id: str, user_team: str):
-        votes = load_data(GENERAL_VOTES_FILE, {})
+        votes = load_data(GENERAL_FILE, {})
         general_votes = []
 
         for vote_id, vote_data in votes.items():
@@ -397,7 +397,7 @@ async def handle_general_vote_interaction(query, context, vote_id, vote_data):
     else:
         message += "Оберіть ваш варіант:"
 
-    responses = load_data(GENERAL_VOTE_RESPONSES_FILE, {})
+    responses = load_data(GENERAL_VOTES_FILE, {"votes": {}})
     if vote_id in responses and user_id in responses[vote_id]:
         current_response = responses[vote_id][user_id]["response"]
         message += f"\n\nВаша поточна відповідь: {current_response}"
@@ -499,7 +499,11 @@ async def handle_vote_team(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     team = query.data.replace("general_vote_team_", "")
 
-    vote_id = str(uuid.uuid4())[:8]
+    votes = load_data(GENERAL_FILE, {})
+    if votes:
+        vote_id = str(max(int(k) for k in votes.keys()) + 1)
+    else:
+        vote_id = "1"
     now = datetime.datetime.now()
 
     vote_data = {
@@ -513,11 +517,10 @@ async def handle_vote_team(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "is_active": True
     }
 
-    votes = load_data(GENERAL_VOTES_FILE, {})
     votes[vote_id] = vote_data
-    save_data(votes, GENERAL_VOTES_FILE)
+    save_data(votes, GENERAL_FILE)
 
-    await send_vote_to_users(context, vote_data)
+    await send_vote_to_users(context, vote_data, vote_id)
 
     team_display = {"Male": "чоловічої команди", "Female": "жіночої команди", "Both": "обох команд"}[team]
 
@@ -531,9 +534,8 @@ async def handle_vote_team(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     return ConversationHandler.END
 
 
-async def send_vote_to_users(context: ContextTypes.DEFAULT_TYPE, vote_data: dict):
+async def send_vote_to_users(context: ContextTypes.DEFAULT_TYPE, vote_data: dict, vote_id: str):
     users = load_data("users", {})
-    vote_id = vote_data["vote_id"]
 
     if vote_data["type"] == VoteType.YES_NO:
         keyboard = InlineKeyboardMarkup([
@@ -598,7 +600,7 @@ async def handle_general_vote_response(update: Update, context: ContextTypes.DEF
     users = load_data("users", {})
     user_name = users.get(user_id, {}).get("name", "Невідомий")
 
-    votes = load_data(GENERAL_VOTES_FILE, {})
+    votes = load_data(GENERAL_FILE, {})
     if vote_id not in votes:
         await query.edit_message_text("⚠️ Голосування не знайдено.")
         return
@@ -609,9 +611,9 @@ async def handle_general_vote_response(update: Update, context: ContextTypes.DEF
         await query.edit_message_text("⚠️ Це голосування вже закрито.")
         return
 
-    responses = load_data(GENERAL_VOTE_RESPONSES_FILE, {})
-    if vote_id not in responses:
-        responses[vote_id] = {}
+    responses = load_data(GENERAL_VOTES_FILE, {"votes": {}})
+    if vote_id not in responses["votes"]:
+        responses["votes"][vote_id] = {}
 
     if response_type == "text":
         context.user_data[f"text_vote_{vote_id}"] = True
@@ -623,12 +625,11 @@ async def handle_general_vote_response(update: Update, context: ContextTypes.DEF
     elif response_type in ["yes", "no"]:
         response_value = "Так" if response_type == "yes" else "Ні"
 
-        responses[vote_id][user_id] = {
+        responses["votes"][vote_id][user_id] = {
             "name": user_name,
             "response": response_value,
-            "timestamp": datetime.datetime.now().isoformat()
         }
-        save_data(responses, GENERAL_VOTE_RESPONSES_FILE)
+        save_data(responses, GENERAL_VOTES_FILE)
 
         await query.edit_message_text(f"✅ Ваш голос '{response_value}' збережено!")
 
@@ -637,12 +638,11 @@ async def handle_general_vote_response(update: Update, context: ContextTypes.DEF
         option_value = vote_data["options"][option_index]
 
         if vote_data["type"] == VoteType.MULTIPLE_CHOICE_SINGLE:
-            responses[vote_id][user_id] = {
+            responses["votes"][vote_id][user_id] = {
                 "name": user_name,
                 "response": option_value,
-                "timestamp": datetime.datetime.now().isoformat()
             }
-            save_data(responses, GENERAL_VOTE_RESPONSES_FILE)
+            save_data(responses, GENERAL_VOTES_FILE)
             await query.edit_message_text(f"✅ Ваш вибір '{option_value}' збережено!")
 
         elif vote_data["type"] == VoteType.MULTIPLE_CHOICE_MULTI:
@@ -682,7 +682,7 @@ async def handle_general_vote_response(update: Update, context: ContextTypes.DEF
                     "response": response_value,
                     "timestamp": datetime.datetime.now().isoformat()
                 }
-                save_data(responses, GENERAL_VOTE_RESPONSES_FILE)
+                save_data(responses, GENERAL_VOTES_FILE)
 
                 del context.user_data[f"multi_vote_{vote_id}"]
 
@@ -709,23 +709,23 @@ async def handle_text_vote_input(update: Update, context: ContextTypes.DEFAULT_T
     users = load_data("users", {})
     user_name = users.get(user_id, {}).get("name", "Невідомий")
 
-    votes = load_data(GENERAL_VOTES_FILE, {})
+    votes = load_data(GENERAL_FILE, {})
     vote_data = votes.get(active_vote)
 
     if not vote_data:
         await update.message.reply_text("⚠️ Голосування не знайдено.")
         return
 
-    responses = load_data(GENERAL_VOTE_RESPONSES_FILE, {})
-    if active_vote not in responses:
-        responses[active_vote] = {}
+    responses = load_data(GENERAL_VOTES_FILE, {"votes": {}})
+    if active_vote not in responses["votes"]:
+        responses["votes"][active_vote] = {}
 
-    responses[active_vote][user_id] = {
+    responses["votes"][active_vote][user_id] = {
         "name": user_name,
         "response": update.message.text,
         "timestamp": datetime.datetime.now().isoformat()
     }
-    save_data(responses, GENERAL_VOTE_RESPONSES_FILE)
+    save_data(responses, GENERAL_VOTES_FILE)
 
     await update.message.reply_text("✅ Вашу відповідь збережено!")
 
@@ -743,14 +743,14 @@ async def close_vote(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     vote_id = context.args[0]
-    votes = load_data(GENERAL_VOTES_FILE, {})
+    votes = load_data(GENERAL_FILE, {})
 
     if vote_id not in votes:
         await update.message.reply_text("⚠️ Голосування з таким ID не знайдено.")
         return
 
     votes[vote_id]["is_active"] = False
-    save_data(votes, GENERAL_VOTES_FILE)
+    save_data(votes, GENERAL_FILE)
 
     await update.message.reply_text(f"✅ Голосування {vote_id} закрито.")
 
@@ -847,7 +847,7 @@ async def vote_other_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             continue
 
-    general_votes = load_data(GENERAL_VOTES_FILE, {})
+    general_votes = load_data(GENERAL_FILE, {})
     for vote_id, vote_data in general_votes.items():
         if not vote_data.get("is_active", True):
             continue
@@ -953,15 +953,15 @@ async def handle_vote_other_cast(update: Update, context: ContextTypes.DEFAULT_T
         user_id = context.user_data["vote_other_id"]
         response_text = update.message.text
 
-        responses = load_data(GENERAL_VOTE_RESPONSES_FILE, {})
-        if vote_id not in responses:
-            responses[vote_id] = {}
-        responses[vote_id][user_id] = {
+        responses = load_data(GENERAL_VOTES_FILE, {"votes": {}})
+        if vote_id not in responses["votes"]:
+            responses["votes"][vote_id] = {}
+        responses["votes"][vote_id][user_id] = {
             "name": name,
             "response": response_text,
             "timestamp": datetime.datetime.now().isoformat()
         }
-        save_data(responses, GENERAL_VOTE_RESPONSES_FILE)
+        save_data(responses, GENERAL_VOTES_FILE)
 
         await update.message.reply_text(f"✅ Текстова відповідь за '{name}' збережена: '{response_text}'")
         return ConversationHandler.END
@@ -979,7 +979,7 @@ async def handle_vote_other_cast(update: Update, context: ContextTypes.DEFAULT_T
         option_idx = int(query.data.replace("vote_other_cast_option_", ""))
         response_value = vote_data["options"][option_idx]
 
-        responses = load_data(GENERAL_VOTE_RESPONSES_FILE, {})
+        responses = load_data(GENERAL_VOTES_FILE, {})
         if vote_id not in responses:
             responses[vote_id] = {}
         responses[vote_id][user_id] = {
@@ -987,7 +987,7 @@ async def handle_vote_other_cast(update: Update, context: ContextTypes.DEFAULT_T
             "response": response_value,
             "timestamp": datetime.datetime.now().isoformat()
         }
-        save_data(responses, GENERAL_VOTE_RESPONSES_FILE)
+        save_data(responses, GENERAL_VOTES_FILE)
 
         await query.edit_message_text(f"✅ Голос за '{name}' збережено як '{response_value}'")
 
@@ -1015,7 +1015,7 @@ async def handle_vote_other_cast(update: Update, context: ContextTypes.DEFAULT_T
             await query.edit_message_text(f"✅ Голос за '{name}' збережено як 'БУДЕ' на гру")
 
         elif vote_type == "general":
-            responses = load_data(GENERAL_VOTE_RESPONSES_FILE, {})
+            responses = load_data(GENERAL_VOTES_FILE, {})
             if vote_id not in responses:
                 responses[vote_id] = {}
             responses[vote_id][user_id] = {
@@ -1023,7 +1023,7 @@ async def handle_vote_other_cast(update: Update, context: ContextTypes.DEFAULT_T
                 "response": "Так",
                 "timestamp": datetime.datetime.now().isoformat()
             }
-            save_data(responses, GENERAL_VOTE_RESPONSES_FILE)
+            save_data(responses, GENERAL_VOTES_FILE)
 
             await query.edit_message_text(f"✅ Голос за '{name}' збережено як 'Так'")
 
@@ -1052,7 +1052,7 @@ async def handle_vote_other_cast(update: Update, context: ContextTypes.DEFAULT_T
             await query.edit_message_text(f"✅ Голос за '{name}' збережено як 'НЕ БУДЕ' на гру")
 
         elif vote_type == "general":
-            responses = load_data(GENERAL_VOTE_RESPONSES_FILE, {})
+            responses = load_data(GENERAL_VOTES_FILE, {})
             if vote_id not in responses:
                 responses[vote_id] = {}
             responses[vote_id][user_id] = {
@@ -1060,7 +1060,7 @@ async def handle_vote_other_cast(update: Update, context: ContextTypes.DEFAULT_T
                 "response": "Ні",
                 "timestamp": datetime.datetime.now().isoformat()
             }
-            save_data(responses, GENERAL_VOTE_RESPONSES_FILE)
+            save_data(responses, GENERAL_VOTES_FILE)
 
             await query.edit_message_text(f"✅ Голос за '{name}' збережено як 'Ні'")
 
@@ -1359,15 +1359,15 @@ class UnifiedViewManager:
         return game_votes
 
     def _get_active_general_votes(self):
-        votes = load_data(GENERAL_VOTES_FILE, {})
-        responses = load_data(GENERAL_VOTE_RESPONSES_FILE, {})
+        votes = load_data(GENERAL_FILE, {})
+        responses = load_data(GENERAL_VOTES_FILE, {"votes": {}})
         general_votes = []
 
         for vote_id, vote_data in votes.items():
             if not vote_data.get("is_active", True):
                 continue
 
-            if vote_id in responses and responses[vote_id]:
+            if vote_id in responses.get("votes", {}) and responses["votes"][vote_id]:
                 label = f"📊 {vote_data['question'][:50]}{'...' if len(vote_data['question']) > 50 else ''}"
 
                 team = vote_data.get("team", "Both")
@@ -1383,7 +1383,7 @@ class UnifiedViewManager:
                     "id": vote_id,
                     "label": label,
                     "data": vote_data,
-                    "votes": responses[vote_id]
+                    "votes": responses["votes"][vote_id]
                 })
 
         return general_votes
