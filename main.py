@@ -10,7 +10,7 @@ from games import setup_game_handlers
 from voting import setup_voting_handlers
 from payments import setup_payment_handlers
 from commands import setup_admin_handlers
-from notifier import check_voting_and_notify, start_voting
+from notifier import check_voting_and_notify, start_voting, check_game_reminders
 
 BOT_TOKEN = os.getenv("NEW_TOKEN")
 
@@ -35,6 +35,14 @@ def setup_scheduler(app):
     scheduler.add_job(
         lambda: loop.call_soon_threadsafe(
             lambda: asyncio.create_task(check_voting_and_notify(app))
+        ),
+        'cron', hour=16, minute=0
+    )
+
+    # Send game reminders daily at 19:00
+    scheduler.add_job(
+        lambda: loop.call_soon_threadsafe(
+            lambda: asyncio.create_task(check_game_reminders(app))
         ),
         'cron', hour=16, minute=0
     )

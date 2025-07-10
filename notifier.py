@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from data import load_data
 from telegram.ext import Application
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -13,11 +13,6 @@ VOTES_LIMIT = 14
 
 
 def generate_training_id(training, training_type):
-    """
-    Генерує унікальний ідентифікатор для тренування
-    Формат для разових тренувань: DD.MM.YYYY_HH:MM
-    Формат для постійних тренувань: const_WEEKDAY_HH:MM
-    """
     if training_type == "one-time":
         return f"{training['date']}_{training['start_hour']:02d}:{training['start_min']:02d}"
     else:
@@ -181,3 +176,75 @@ async def send_voting_reminder(app, training, training_id, users, votes_data, tr
                 )
             except Exception as e:
                 print(f"❌ REMINDER: Помилка надсилання до {uid}: {e}")
+
+
+async def check_game_reminders(app: Application):
+    users = load_data(REGISTRATION_FILE)
+    games = load_data("games", {})
+    game_votes = load_data("game_votes", {"votes": {}})
+    today = datetime.today().date()
+    tomorrow = today + timedelta(days=1)
+
+    for game_id, game in games.items():
+        try:
+            game_date = datetime.strptime(game["date"], "%d.%m.%Y").date()
+
+            if game_date == tomorrow:
+                await send_game_reminder(app, game, game_id, users, game_votes)
+
+        except Exception as e:
+            print(f"❌ Помилка обробки гри {game_id}: {e}")
+            continue
+
+
+async def send_game_reminder(app, game, game_id, users, game_votes):
+    type_names = {
+        "friendly": "Товариська гра",
+        "stolichka": "Столична ліга",
+        "universiad": "Універсіада"
+    }
+
+    type_name = type_names.get(game.get('type'), game.get('type', 'Гра'))
+    votes = game_votes.get("votes", {}).get(game_id, {})
+
+    base_message = (
+        f"🏆 Нагадування про гру завтра!\n\n"
+        f"{type_name}\n"
+        f"📅 {game['date']} о {game['time']}\n"
+        f"🏆 Проти: {game['opponent']}\n"
+        f"📍 Місце: {game['location']}\n"
+        f"⏰ Прибуття до: {game['arrival_time']}\n\n"
+    )
+
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Буду", callback_data=f"game_vote_yes_{game_id}"),
+            InlineKeyboardButton("❌ Не буду", callback_data=f"game_vote_no_{game_id}")
+        ]
+    ])
+
+    for uid, user_info in users.items():
+        if game.get("team") not in [user_info.get("team"), "Both"]:
+            continue
+
+        user_vote = votes.get(str(uid))
+
+        if user_vote is None:
+            message = base_message + "❗ Ти ще не проголосував! Будь ласка, повідом чи будеш на грі:"
+            reply_markup = keyboard
+
+        elif user_vote.get("vote") == "yes":
+            message = base_message + "✅ Ти записаний на гру. До зустрічі завтра!"
+            reply_markup = None
+
+        else:
+            continue
+
+        try:
+            await app.bot.send_message(
+                chat_id=int(uid),
+                text=message,
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            print(f"❌ GAME REMINDER: Помилка надсилання до {uid}: {e}")
