@@ -1209,10 +1209,70 @@ async def handle_unlock_selection(update: Update, context: ContextTypes.DEFAULT_
         await query.edit_message_text("⚠️ Тренування не знайдено.")
         return
 
+    old_team = trainings[tid]["team"]
+
     trainings[tid]["team"] = "Both"
     save_data(trainings, "one_time_trainings" if ttype == "one_time" else "constant_trainings")
 
+    await notify_team_about_unlock(context, trainings[tid], tid, ttype, old_team)
+
     await query.edit_message_text("✅ Тренування оновлено. Тепер обидві команди можуть голосувати.")
+
+
+async def notify_team_about_unlock(context, training, training_id, training_type, old_team):
+    users = load_data("users", {})
+
+    target_team = "Female" if old_team == "Male" else "Male"
+
+    if training_type == "one_time":
+        date_str = training['date']
+        vote_id = f"{training['date']}_{training['start_hour']:02d}:{training['start_min']:02d}"
+    else:
+        weekdays = ["понеділок", "вівторок", "середу", "четвер", "п'ятницю", "суботу", "неділю"]
+        date_str = weekdays[training['weekday']]
+        vote_id = f"const_{training['weekday']}_{training['start_hour']:02d}:{training['start_min']:02d}"
+
+    start_time = f"{training['start_hour']:02d}:{training['start_min']:02d}"
+    end_time = f"{training['end_hour']:02d}:{training['end_min']:02d}"
+
+    coach_str = " (З тренером)" if training.get("with_coach") else ""
+    location = training.get("location", "")
+    location = "" if location and location.lower() == "наукма" else location
+    loc_str = f"\n📍 {location}" if location else ""
+    description = training.get("description", "")
+    desc_str = f"\nℹ️ {description}" if description else ""
+
+    old_team_name = "чоловічої" if old_team == "Male" else "жіночої"
+
+    message = (
+        f"🎉 Доступне нове тренування!\n\n"
+        f"Тренування {'в ' if training_type == 'constant' else ''}{date_str}{coach_str}\n"
+        f"⏰ З {start_time} до {end_time}"
+        f"{loc_str}"
+        f"{desc_str}\n\n"
+        f"Це тренування було для {old_team_name} команди, але тепер відкрито для всіх!\n"
+        f"Чи будете брати участь?"
+    )
+
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Так", callback_data=f"vote_yes_{vote_id}"),
+            InlineKeyboardButton("❌ Ні", callback_data=f"vote_no_{vote_id}")
+        ]
+    ])
+
+    count = 0
+    for uid, user_info in users.items():
+        if user_info.get("team") == target_team:
+            try:
+                await context.bot.send_message(
+                    chat_id=int(uid),
+                    text=message,
+                    reply_markup=keyboard
+                )
+                count += 1
+            except Exception as e:
+                print(f"❌ UNLOCK NOTIFY: Помилка надсилання до {uid}: {e}")
 
 
 class UnifiedViewManager:

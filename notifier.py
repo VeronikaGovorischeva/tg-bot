@@ -1,6 +1,6 @@
 import asyncio
 from datetime import datetime, timedelta
-from data import load_data
+from data import load_data, save_data
 from telegram.ext import Application
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -28,8 +28,12 @@ async def start_voting(app: Application):
     constant_trainings = load_data(CONSTANT_TRAININGS_FILE, {})
 
     for training_id, training in one_time_trainings.items():
-        if training.get("start_voting") == today.strftime("%d.%m.%Y"):
+        if (training.get("start_voting") == today.strftime("%d.%m.%Y") and
+                not training.get("voting_opened", False)):
             await open_training_voting(app, training, training_id, users, "one-time")
+            training["voting_opened"] = True
+            one_time_trainings[training_id] = training
+            save_data(one_time_trainings, ONE_TIME_TRAININGS_FILE)
     for training_id, training in constant_trainings.items():
         if training.get("start_voting") == weekday:
             await open_training_voting(app, training, training_id, users, "constant")

@@ -262,7 +262,8 @@ async def save_training_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "end_hour": context.user_data['end_hour'],
         "end_min": context.user_data['end_min'],
         "start_voting": context.user_data['start_voting'],
-        "status": "not charged"
+        "status": "not charged",
+        "voting_opened": False
     }
 
     is_onetime = context.user_data['training_type'] == TrainingType.ONE_TIME.value
@@ -278,6 +279,19 @@ async def save_training_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
     trainings[new_id] = training_data
     save_data(trainings, file_path)
 
+    if is_onetime:
+        try:
+            start_voting_date = datetime.datetime.strptime(training_data['start_voting'], "%d.%m.%Y").date()
+            today = datetime.datetime.now().date()
+
+            if start_voting_date <= today:
+                await open_onetime_training_voting_immediately(context, training_data, new_id)
+                training_data["voting_opened"] = True
+                trainings[new_id] = training_data
+                save_data(trainings, file_path)
+        except:
+            pass
+
     location = training_data["location"]
     description = training_data.get("description")
     desc_text = f" ({description})" if description else ""
@@ -288,6 +302,47 @@ async def save_training_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text(message)
     elif update.callback_query:
         await update.callback_query.message.reply_text(message)
+
+
+async def open_onetime_training_voting_immediately(context, training, training_id):
+    users = load_data(DATA_FILE)
+    vote_id = f"{training['date']}_{training['start_hour']:02d}:{training['start_min']:02d}"
+
+    start_time = f"{training['start_hour']:02d}:{training['start_min']:02d}"
+    end_time = f"{training['end_hour']:02d}:{training['end_min']:02d}"
+
+    coach_str = " (З тренером)" if training.get("with_coach") else ""
+    location = training.get("location", "")
+    location = "" if location and location.lower() == "наукма" else location
+    loc_str = f"\n📍 {location}" if location else ""
+    description = training.get("description", "")
+    desc_str = f"\nℹ️ {description}" if description else ""
+
+    message = (
+        f"🏐 Почалося голосування!\n"
+        f"Тренування {training['date']}{coach_str}\n"
+        f"⏰ З {start_time} до {end_time}"
+        f"{loc_str}"
+        f"{desc_str}"
+    )
+
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Так", callback_data=f"vote_yes_{vote_id}"),
+            InlineKeyboardButton("❌ Ні", callback_data=f"vote_no_{vote_id}")
+        ]
+    ])
+
+    for uid, info in users.items():
+        if training.get("team") in [info.get("team"), "Both"]:
+            try:
+                await context.bot.send_message(
+                    chat_id=int(uid),
+                    text=message,
+                    reply_markup=keyboard
+                )
+            except Exception as e:
+                print(f"❌ ONETIME: Помилка надсилання до {uid}: {e}")
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
