@@ -350,9 +350,9 @@ async def handle_game_vote_interaction(query, context, game_id, game_data):
     message += f"🏆 Проти: {game_data['opponent']}\n"
     message += f"📍 Місце: {game_data['location']}\n\n"
 
-    game_votes = load_data(GAME_VOTES_FILE, {})
-    if game_id in game_votes and user_id in game_votes[game_id]:
-        current_vote = game_votes[game_id][user_id]["vote"]
+    game_votes = load_data(GAME_VOTES_FILE, {"votes": {}})  # Add default structure
+    if game_id in game_votes["votes"] and user_id in game_votes["votes"][game_id]:  # Add ["votes"]
+        current_vote = game_votes["votes"][game_id][user_id]["vote"]  # Add ["votes"]
         message += f"Ваш поточний голос: {'БУДУ' if current_vote == 'yes' else 'НЕ БУДУ'}\n"
 
     message += "Чи будете брати участь у цій грі?"
@@ -1003,13 +1003,12 @@ async def handle_vote_other_cast(update: Update, context: ContextTypes.DEFAULT_T
                 f"✅ Голос за '{name}' збережено як 'БУДЕ' на тренування {format_training_id(vote_id)}")
 
         elif vote_type == "game":
-            game_votes = load_data(GAME_VOTES_FILE, {})
-            if vote_id not in game_votes:
-                game_votes[vote_id] = {}
-            game_votes[vote_id][user_id] = {
+            game_votes = load_data(GAME_VOTES_FILE, {"votes": {}})
+            if vote_id not in game_votes["votes"]:
+                game_votes["votes"][vote_id] = {}
+            game_votes["votes"][vote_id][user_id] = {
                 "name": name,
                 "vote": "yes",
-                "timestamp": datetime.datetime.now().isoformat()
             }
             save_data(game_votes, GAME_VOTES_FILE)
 
@@ -1278,21 +1277,21 @@ class UnifiedViewManager:
 
     def _get_active_game_votes(self):
         games = load_data(GAMES_FILE, {})
-        game_votes_data = load_data(GAME_VOTES_FILE, {})
+        game_votes_data = load_data(GAME_VOTES_FILE, {"votes": {}})
         now = datetime.datetime.now()
         game_votes = []
 
         for game in games.values():
             try:
                 game_datetime = datetime.datetime.strptime(f"{game['date']} {game['time']}", "%d.%m.%Y %H:%M")
-                if game_datetime > now and game['id'] in game_votes_data:
+                if game_datetime > now and game['id'] in game_votes_data["votes"]:
                     label = self._format_game_label(game)
                     game_votes.append({
                         "type": "game",
                         "id": game['id'],
                         "label": label,
                         "data": game,
-                        "votes": game_votes_data[game['id']]
+                        "votes": game_votes_data["votes"][game['id']]
                     })
             except ValueError:
                 continue
@@ -1377,10 +1376,9 @@ class UnifiedViewManager:
 
     def _format_game_label(self, game):
         type_names = {
-            "friendly": "Товариський матч",
-            "tournament": "Турнір",
-            "league": "Чемпіонат/Ліга",
-            "training_match": "Тренувальний матч"
+            "friendly": "Товариська гра",
+            "stolichka": "Столична ліга",
+            "universiad": "Універсіада"
         }
 
         type_name = type_names.get(game.get('type'), game.get('type', 'Гра'))

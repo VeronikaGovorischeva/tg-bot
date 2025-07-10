@@ -7,8 +7,7 @@ from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, Call
 from data import load_data, save_data
 from validation import is_authorized
 
-GAME_TYPE, GAME_TEAM, GAME_DATE, GAME_TIME, GAME_OPPONENT, GAME_LOCATION, GAME_ARRIVAL, GAME_TRANSPORT, GAME_NOTES = range(
-    300, 309)
+GAME_TYPE, GAME_TEAM, GAME_DATE, GAME_TIME, GAME_OPPONENT, GAME_LOCATION, GAME_ARRIVAL = range(300, 307)
 EDIT_GAME_SELECT, EDIT_GAME_FIELD, EDIT_GAME_VALUE = range(320, 323)
 
 GAMES_FILE = "games"
@@ -17,9 +16,8 @@ GAME_VOTES_FILE = "game_votes"
 
 class GameType(Enum):
     FRIENDLY = "friendly"
-    TOURNAMENT = "tournament"
-    LEAGUE = "league"
-    TRAINING_MATCH = "training_match"
+    STOLICHKA = "stolichka"
+    UNIVERSIAD = "universiad"
 
 
 class Team(Enum):
@@ -48,18 +46,16 @@ GAME_MESSAGES = {
 class GameManager:
     def __init__(self):
         self.game_types = {
-            GameType.FRIENDLY: "Товариський матч",
-            GameType.TOURNAMENT: "Турнір",
-            GameType.LEAGUE: "Чемпіонат/Ліга",
-            GameType.TRAINING_MATCH: "Тренувальний матч"
+            GameType.FRIENDLY: "Товариська гра",
+            GameType.STOLICHKA: "Столична ліга",
+            GameType.UNIVERSIAD: "Універсіада"
         }
 
     def create_game_type_keyboard(self):
         return InlineKeyboardMarkup([
-            [InlineKeyboardButton("Товариський матч", callback_data=f"game_type_{GameType.FRIENDLY.value}")],
-            [InlineKeyboardButton("Турнір", callback_data=f"game_type_{GameType.TOURNAMENT.value}")],
-            [InlineKeyboardButton("Чемпіонат/Ліга", callback_data=f"game_type_{GameType.LEAGUE.value}")],
-            [InlineKeyboardButton("Тренувальний матч", callback_data=f"game_type_{GameType.TRAINING_MATCH.value}")]
+            [InlineKeyboardButton("Товариська гра", callback_data=f"game_type_{GameType.FRIENDLY.value}")],
+            [InlineKeyboardButton("Столична ліга", callback_data=f"game_type_{GameType.STOLICHKA.value}")],
+            [InlineKeyboardButton("Універсіада", callback_data=f"game_type_{GameType.UNIVERSIAD.value}")]
         ])
 
     def create_team_keyboard(self):
@@ -163,6 +159,33 @@ async def game_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     return GAME_ARRIVAL
 
 
+def generate_unique_game_id(games_data: dict, user_data: dict) -> str:
+    try:
+        game_date = datetime.datetime.strptime(user_data['game_date'], "%d.%m.%Y")
+    except:
+        game_date = datetime.datetime.now()
+
+    if game_date.month >= 9:
+        season_start = game_date.year
+        season_end = game_date.year + 1
+    else:
+        season_start = game_date.year - 1
+        season_end = game_date.year
+
+    season = f"{season_start}_{season_end}"
+
+    game_type = user_data['game_type']
+    team = user_data['game_team'].lower()
+    existing_count = 0
+    season_prefix = f"{game_type}_{team}_{season}"
+
+    for game_id in games_data.keys():
+        if game_id.startswith(season_prefix):
+            existing_count += 1
+
+    return f"{game_type}_{team}_{season}_{existing_count + 1}"
+
+
 async def game_arrival(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     is_valid, time_tuple = game_manager.validate_time(update.message.text)
     if not is_valid:
@@ -170,24 +193,18 @@ async def game_arrival(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         return GAME_ARRIVAL
 
     context.user_data['arrival_hour'], context.user_data['arrival_minute'] = time_tuple
-    await update.message.reply_text(GAME_MESSAGES["enter_transport"])
-    return GAME_TRANSPORT
-
-
-async def game_transport(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    transport = update.message.text.strip()
-    context.user_data['game_transport'] = None if transport == '-' else transport
-    await update.message.reply_text(GAME_MESSAGES["enter_notes"])
-    return GAME_NOTES
-
-
-async def game_notes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    notes = update.message.text.strip()
-    context.user_data['game_notes'] = None if notes == '-' else notes
 
     games = load_data(GAMES_FILE, {})
+    game_id = generate_unique_game_id(games, context.user_data)
+    context.user_data['game_id'] = game_id
 
-    game_id = str(max([int(k) for k in games.keys()] + [0]) + 1)
+    await save_game_and_notify(update, context)
+    return ConversationHandler.END
+
+
+async def save_game_and_notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    games = load_data(GAMES_FILE, {})
+    game_id = context.user_data['game_id']
 
     game_data = {
         "id": game_id,
@@ -198,10 +215,9 @@ async def game_notes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "opponent": context.user_data['game_opponent'],
         "location": context.user_data['game_location'],
         "arrival_time": f"{context.user_data['arrival_hour']:02d}:{context.user_data['arrival_minute']:02d}",
-        "transport": context.user_data.get('game_transport'),
-        "notes": context.user_data.get('game_notes'),
-        "created_at": datetime.datetime.now().isoformat(),
-        "status": "scheduled"
+        "status": None,
+        "result": None,
+        "mvp": None
     }
 
     games[game_id] = game_data
@@ -210,23 +226,58 @@ async def game_notes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     type_name = game_manager.game_types[GameType(game_data['type'])]
     team_names = {"Male": "чоловічої команди", "Female": "жіночої команди", "Both": "обох команд"}
 
-    message = f"✅ {GAME_MESSAGES['game_saved']}\n\n"
-    message += f"🎮 Тип: {type_name}\n"
-    message += f"👥 Команда: {team_names[game_data['team']]}\n"
-    message += f"📅 Дата: {game_data['date']} о {game_data['time']}\n"
-    message += f"🏆 Проти: {game_data['opponent']}\n"
-    message += f"📍 Місце: {game_data['location']}\n"
-    message += f"⏰ Прибуття: {game_data['arrival_time']}\n"
-
-    if game_data['transport']:
-        message += f"🚌 Транспорт: {game_data['transport']}\n"
-    if game_data['notes']:
-        message += f"📝 Примітки: {game_data['notes']}\n"
-
-    message += f"\n🆔 ID гри: {game_id}"
+    message = f"Гру успішно створено!\n\n"
+    message += f"Тип: {type_name}\n"
+    message += f"Команда: {team_names[game_data['team']]}\n"
+    message += f"Дата: {game_data['date']} о {game_data['time']}\n"
+    message += f"Проти: {game_data['opponent']}\n"
+    message += f"Місце: {game_data['location']}\n"
+    message += f"Прибуття: {game_data['arrival_time']}"
 
     await update.message.reply_text(message)
-    return ConversationHandler.END
+
+    try:
+        game_datetime = datetime.datetime.strptime(f"{game_data['date']} {game_data['time']}", "%d.%m.%Y %H:%M")
+        now = datetime.datetime.now()
+
+        if game_datetime > now:
+            await send_game_voting_to_team(context, game_data)
+
+    except ValueError as e:
+        print(f"Помилка парсингу дати для гри {game_id}: {e}")
+
+
+async def send_game_voting_to_team(context: ContextTypes.DEFAULT_TYPE, game_data: dict):
+    users = load_data("users", {})
+    type_name = game_manager.game_types[GameType(game_data['type'])]
+
+    message = f"Нова гра!\n\n"
+    message += f"{type_name}\n"
+    message += f"Дата: {game_data['date']} о {game_data['time']}\n"
+    message += f"Проти: {game_data['opponent']}\n"
+    message += f"Місце: {game_data['location']}\n"
+    message += f"Прибуття до: {game_data['arrival_time']}\n\n"
+    message += "Чи будете брати участь?"
+
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("Буду", callback_data=f"game_vote_yes_{game_data['id']}"),
+            InlineKeyboardButton("Не буду", callback_data=f"game_vote_no_{game_data['id']}")
+        ]
+    ])
+
+    count = 0
+    for uid, user_info in users.items():
+        if game_data["team"] in [user_info.get("team"), "Both"]:
+            try:
+                await context.bot.send_message(
+                    chat_id=int(uid),
+                    text=message,
+                    reply_markup=keyboard
+                )
+                count += 1
+            except Exception as e:
+                print(f"Помилка надсилання голосування до {uid}: {e}")
 
 
 async def next_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -435,14 +486,13 @@ async def handle_game_vote(update: Update, context: ContextTypes.DEFAULT_TYPE):
     users = load_data("users", {})
     user_name = users.get(user_id, {}).get("name", "Невідомий")
 
-    game_votes = load_data(GAME_VOTES_FILE, {})
-    if game_id not in game_votes:
-        game_votes[game_id] = {}
+    game_votes = load_data(GAME_VOTES_FILE, {"votes": {}})
+    if game_id not in game_votes["votes"]:
+        game_votes["votes"][game_id] = {}
 
-    game_votes[game_id][user_id] = {
+    game_votes["votes"][game_id][user_id] = {
         "name": user_name,
-        "vote": vote,
-        "timestamp": datetime.datetime.now().isoformat()
+        "vote": vote
     }
     save_data(game_votes, GAME_VOTES_FILE)
 
@@ -517,9 +567,7 @@ def create_game_add_handler():
             GAME_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, game_time)],
             GAME_OPPONENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, game_opponent)],
             GAME_LOCATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, game_location)],
-            GAME_ARRIVAL: [MessageHandler(filters.TEXT & ~filters.COMMAND, game_arrival)],
-            GAME_TRANSPORT: [MessageHandler(filters.TEXT & ~filters.COMMAND, game_transport)],
-            GAME_NOTES: [MessageHandler(filters.TEXT & ~filters.COMMAND, game_notes)]
+            GAME_ARRIVAL: [MessageHandler(filters.TEXT & ~filters.COMMAND, game_arrival)]
         },
         fallbacks=[CommandHandler("cancel", cancel_game_creation)]
     )
