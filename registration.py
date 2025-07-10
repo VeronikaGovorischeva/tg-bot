@@ -153,3 +153,7 @@ def create_registration_handler() -> ConversationHandler:
         },
         fallbacks=[CommandHandler("cancel", registration_manager.handle_cancel)]
     )
+
+def setup_registration_handlers(app):
+    # /start
+    app.add_handler(create_registration_handler())

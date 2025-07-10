@@ -506,6 +506,7 @@ async def cancel_game_creation(update: Update, context: ContextTypes.DEFAULT_TYP
     await update.message.reply_text("❌ Додавання гри скасовано.")
     return ConversationHandler.END
 
+
 def create_game_add_handler():
     return ConversationHandler(
         entry_points=[CommandHandler("add_game", add_game)],
@@ -522,3 +523,21 @@ def create_game_add_handler():
         },
         fallbacks=[CommandHandler("cancel", cancel_game_creation)]
     )
+
+
+def setup_game_handlers(app):
+    # /next_game
+    app.add_handler(CommandHandler("next_game", next_game))
+    # /list_games
+    app.add_handler(CommandHandler("list_games", list_games))
+    # /week_games
+    app.add_handler(CommandHandler("week_games", week_games))
+    # Admin: /add_game
+    app.add_handler(create_game_add_handler())
+    # Admin: /delete_game
+    app.add_handler(CommandHandler("delete_game", delete_game))
+
+    # Callback handlers
+    app.add_handler(CallbackQueryHandler(handle_list_games, pattern=r"^list_games_"))
+    app.add_handler(CallbackQueryHandler(handle_delete_game_confirmation, pattern=r"^delete_game_"))
+    app.add_handler(CallbackQueryHandler(handle_game_vote, pattern=r"^game_vote_(yes|no)_"))

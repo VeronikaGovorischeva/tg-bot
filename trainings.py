@@ -586,3 +586,12 @@ def reset_today_constant_trainings_status():
         save_data(constant_trainings, "constant_trainings")
         save_data(votes, "votes")
         print("✅ Reset statuses and cleaned up votes for finished trainings.")
+
+
+def setup_training_handlers(app):
+    # /next_training
+    app.add_handler(CommandHandler("next_training", next_training))
+    # week_trainings
+    app.add_handler(CommandHandler("week_trainings", week_trainings))
+    # Admin: /add_training
+    app.add_handler(create_training_add_handler())
