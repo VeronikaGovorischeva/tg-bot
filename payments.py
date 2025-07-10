@@ -1,11 +1,11 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler, MessageHandler, filters, CallbackQueryHandler, \
     CommandHandler
+
 from data import load_data, save_data
 from validation import ADMIN_IDS, is_authorized
 
 CHARGE_SELECT_TRAINING, CHARGE_ENTER_AMOUNT = range(100, 102)
-
 CARD_NUMBER = "5457 0825 2151 6794"
 
 
@@ -96,7 +96,6 @@ async def handle_charge_amount_input(update: Update, context: ContextTypes.DEFAU
         await update.message.reply_text("Тренування не знайдено.")
         return ConversationHandler.END
 
-    # Get votes for this training
     votes = load_data("votes", {"votes": {}})["votes"]
     training_id = (
         f"{training['date']}_{training['start_hour']:02d}:{training['start_min']:02d}"
@@ -114,7 +113,6 @@ async def handle_charge_amount_input(update: Update, context: ContextTypes.DEFAU
         await update.message.reply_text("Ніхто не проголосував 'так' за це тренування.")
         return ConversationHandler.END
 
-    # Calculate amount per person
     per_person = round(amount / len(yes_voters))
     training_datetime = (
         f"{training['date']} {training['start_hour']:02d}:{training['start_min']:02d}"
@@ -122,7 +120,6 @@ async def handle_charge_amount_input(update: Update, context: ContextTypes.DEFAU
         else f"{label}"
     )
 
-    # Create payments
     payments = load_data("payments", {})
     success_count = 0
 
@@ -172,21 +169,20 @@ async def handle_payment_confirmation(update: Update, context: ContextTypes.DEFA
     await query.answer()
 
     payload = query.data[len("paid_yes_"):]
-    # Розбиваємо з кінця, бо user_id завжди останній
     training_id, user_id = payload.rsplit("_", 1)
 
     payments = load_data("payments", {})
     key = f"{training_id}_{user_id}"
 
     if key not in payments:
-        await query.edit_message_text("⚠️ Помилка: запис про платіж не знайдено. Використай команду /pay_debt для підтвердження")
+        await query.edit_message_text(
+            "⚠️ Помилка: запис про платіж не знайдено. Використай команду /pay_debt для підтвердження")
         return
 
     payments[key]["paid"] = True
     save_data(payments, "payments")
     await query.edit_message_text("✅ Дякуємо! Оплату зареєстровано.")
 
-    # Check if all paid and notify admins
     all_paid = all(p["paid"] for p in payments.values() if p["training_id"] == training_id)
     if all_paid:
         one_time_trainings = load_data("one_time_trainings", {})
@@ -216,6 +212,7 @@ async def handle_payment_confirmation(update: Update, context: ContextTypes.DEFA
 async def cancel_charge(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("❌ Нарахування скасовано.")
     return ConversationHandler.END
+
 
 async def pay_debt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = str(update.message.from_user.id)
@@ -392,3 +389,18 @@ def create_charge_conversation_handler():
             CommandHandler('cancel', cancel_charge)
         ],
     )
+
+
+def setup_payment_handlers(app):
+    # /pay_debt
+    app.add_handler(CommandHandler("pay_debt", pay_debt))
+    # Admin: /charge_all
+    app.add_handler(create_charge_conversation_handler())
+    # Admin: /view_payments
+    app.add_handler(CommandHandler("view_payments", view_payments))
+
+    #Other
+    app.add_handler(CallbackQueryHandler(handle_payment_confirmation, pattern=r"^paid_yes_.*"))
+    app.add_handler(CallbackQueryHandler(handle_pay_debt_selection, pattern=r"^paydebt_select_\d+$"))
+    app.add_handler(CallbackQueryHandler(handle_pay_debt_confirmation, pattern=r"^paydebt_confirm_yes$"))
+    app.add_handler(CallbackQueryHandler(handle_view_payment_selection, pattern=r"^view_payment_\d+"))
