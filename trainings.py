@@ -1,9 +1,9 @@
+import datetime
 from enum import Enum
-
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, CallbackQueryHandler, MessageHandler, \
     filters
-import datetime
+
 from data import load_data, save_data
 from validation import is_authorized
 
@@ -29,14 +29,11 @@ class VotingType(Enum):
     RECURRING = "recurring"
 
 
-# Conversation states
 TYPE, TEAM, COACH, LOCATION, DESCRIPTION, DATE, START, END, WEEKDAY, START_VOTING = range(10)
 
-# File paths
 ONE_TIME_TRAININGS_FILE = "one_time_trainings"
 CONSTANT_TRAININGS_FILE = "constant_trainings"
 
-# UI Text constants
 MESSAGES = {
     "unauthorized": "У вас немає дозволу на додавання тренувань.",
     "select_type": "Виберіть тип тренування:",
@@ -141,12 +138,10 @@ async def training_coach(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await query.answer()
     context.user_data['with_coach'] = query.data == "training_coach_yes"
 
-    # NEW: Ask for location after coach selection
     await query.edit_message_text(MESSAGES["enter_location"])
     return LOCATION
 
 
-# NEW: Handle location input
 async def training_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     location = update.message.text.strip()
     context.user_data['training_location'] = None if location == '-' else location
@@ -155,10 +150,8 @@ async def training_location(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     return DESCRIPTION
 
 
-# NEW: Handle description input
 async def training_description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     description = update.message.text.strip()
-    # If user sends '-', treat as no description
     context.user_data['training_description'] = None if description == '-' else description
 
     if context.user_data['training_type'] == TrainingType.ONE_TIME.value:
@@ -285,7 +278,6 @@ async def save_training_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
     trainings[new_id] = training_data
     save_data(trainings, file_path)
 
-    # UPDATED: Show confirmation with location and description
     location = training_data["location"]
     description = training_data.get("description")
     desc_text = f" ({description})" if description else ""
@@ -299,7 +291,6 @@ async def save_training_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Handles registration cancellation."""
     await update.message.reply_text("Додавання скасоване. Використовуй /add_training щоб спробувати знову.")
     return ConversationHandler.END
 
@@ -311,8 +302,8 @@ def create_training_add_handler():
             TYPE: [CallbackQueryHandler(training_type)],
             TEAM: [CallbackQueryHandler(training_team)],
             COACH: [CallbackQueryHandler(training_coach)],
-            LOCATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, training_location)],  # NEW
-            DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, training_description)],  # NEW
+            LOCATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, training_location)],
+            DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, training_description)],
             DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, training_date)],
             START: [MessageHandler(filters.TEXT & ~filters.COMMAND, training_start)],
             END: [MessageHandler(filters.TEXT & ~filters.COMMAND, training_end)],
@@ -325,12 +316,6 @@ def create_training_add_handler():
 
 
 def get_next_training(team=None):
-    """
-    Fetch the next training session, considering both one-time and recurring trainings.
-
-    Returns:
-        dict | None: A dictionary containing training details, or None if no training is found.
-    """
     one_time_trainings = load_data(ONE_TIME_TRAININGS_FILE, {})
     constant_trainings = load_data(CONSTANT_TRAININGS_FILE, {})
 
@@ -341,7 +326,6 @@ def get_next_training(team=None):
 
     all_trainings = []
 
-    # Process constant trainings
     for training in constant_trainings.values():
         if not isinstance(training, dict) or training.get("team") not in [team, "Both", None]:
             continue
@@ -372,7 +356,6 @@ def get_next_training(team=None):
             "days_until": days_until
         })
 
-    # Process one-time trainings
     for training in one_time_trainings.values():
         if not isinstance(training, dict) or training.get("team") not in [team, "Both", None]:
             continue
@@ -404,7 +387,6 @@ def get_next_training(team=None):
             "days_until": days_until
         })
 
-    # Sort trainings by date and start time
     all_trainings.sort(key=lambda x: (x["date"], x["start_hour"], x["start_min"]))
 
     return all_trainings[0] if all_trainings else None
@@ -422,7 +404,6 @@ def get_next_week_trainings(team=None):
     end_date = current_date + timedelta(days=7)
     trainings = []
 
-    # Constant trainings
     for training in constant_trainings.values():
         if training.get("team") not in [team, "Both", None]:
             continue
@@ -447,7 +428,6 @@ def get_next_week_trainings(team=None):
                     "type": "constant"
                 })
 
-    # One-time trainings
     for training in one_time_trainings.values():
         if training.get("team") not in [team, "Both", None]:
             continue
@@ -566,49 +546,8 @@ def format_next_training_message(user_id: str) -> str:
 
 
 async def next_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Handles the /next_training command, fetching and formatting the next training session.
-    """
     user_id = str(update.message.from_user.id)
-
     await update.message.reply_text(format_next_training_message(user_id))
-
-
-def get_last_training():
-    one_time_trainings = load_data(ONE_TIME_TRAININGS_FILE, {})
-    constant_trainings = load_data(CONSTANT_TRAININGS_FILE, {})
-
-    all_trainings = []
-
-    for tid, training in one_time_trainings.items():
-        date_obj = datetime.datetime.strptime(training["date"], "%d.%m.%Y").date()
-        if date_obj < datetime.date.today():
-            all_trainings.append((date_obj, tid))
-
-    today_weekday = datetime.date.today().weekday()
-    for tid, training in constant_trainings.items():
-        if training["weekday"] < today_weekday:
-            last_training_date = datetime.date.today() - datetime.timedelta(days=(today_weekday - training["weekday"]))
-            all_trainings.append((last_training_date, tid))
-
-    if not all_trainings:
-        return None, None
-
-    last_training = max(all_trainings, key=lambda x: x[0])
-    return last_training[0].strftime("%d.%m.%Y"), last_training[1]
-
-
-async def last_training(update, context: ContextTypes.DEFAULT_TYPE):
-    last_training_date, training_id = get_last_training()
-    if last_training_date:
-        message = f"Останнє тренування було {last_training_date} (ID: {training_id})."
-    else:
-        message = "Немає записаних тренувань."
-    await update.message.reply_text(message)
-
-
-import datetime
-from data import load_data, save_data
 
 
 def reset_today_constant_trainings_status():
@@ -621,30 +560,23 @@ def reset_today_constant_trainings_status():
     updated = False
 
     for tid, training in constant_trainings.items():
-        # Calculate the date of the training
         weekday = training.get("weekday")
         if weekday is None:
             continue
-
-        # Get the most recent past or today date for the training's weekday
         days_ago = (now.weekday() - weekday) % 7
         training_date = today - datetime.timedelta(days=days_ago)
 
-        # Skip future trainings
         if training_date > today:
             continue
 
-        # Get end time
         training_end_time = datetime.time(hour=training["end_hour"], minute=training["end_min"])
         vote_id = f"const_{weekday}_{training['start_hour']:02d}:{training['start_min']:02d}"
 
-        # Reset if ended today
         if training_date == today and current_time >= training_end_time:
             if training.get("status") != "not charged":
                 training["status"] = "not charged"
                 updated = True
 
-        # Delete vote if the training was before today
         if training_date < today:
             if vote_id in votes["votes"]:
                 del votes["votes"][vote_id]
