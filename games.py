@@ -487,7 +487,7 @@ async def handle_game_vote(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     data_parts = query.data.split("_")
     vote = data_parts[2]
-    game_id = data_parts[3]
+    game_id = "_".join(data_parts[3:])
 
     user_id = str(query.from_user.id)
     users = load_data("users", {})
