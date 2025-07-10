@@ -1,3 +1,4 @@
+import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 from data import load_data
@@ -359,6 +360,93 @@ async def my_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(message)
 
 
+async def game_results(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("Чоловіча команда", callback_data="game_results_Male"),
+            InlineKeyboardButton("Жіноча команда", callback_data="game_results_Female")
+        ]
+    ])
+
+    await update.message.reply_text(
+        "🏆 Результати ігор\n\nОберіть команду для перегляду:",
+        reply_markup=keyboard
+    )
+
+
+async def handle_game_results_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    team_filter = query.data.replace("game_results_", "")
+    games = load_data("games", {})
+
+    now = datetime.datetime.now()
+
+    completed_games = []
+    for game_id, game in games.items():
+        if game.get("team") not in [team_filter, "Both"]:
+            continue
+        try:
+            game_datetime = datetime.datetime.strptime(f"{game['date']} {game['time']}", "%d.%m.%Y %H:%M")
+            result = game.get("result", {})
+            if game_datetime < now and result.get("status") is not None:
+                completed_games.append((game_id, game, game_datetime))
+        except ValueError:
+            continue
+
+    completed_games.sort(key=lambda x: x[2], reverse=True)
+
+    if not completed_games:
+        team_name = "чоловічої" if team_filter == "Male" else "жіночої"
+        await query.edit_message_text(
+            f"🏆 Результати ігор {team_name} команди:\n\nПоки що немає завершених ігор з результатами.")
+        return
+
+    team_name = "чоловічої" if team_filter == "Male" else "жіночої"
+    message = f"🏆 Результати ігор {team_name} команди:\n\n"
+
+    type_names = {
+        "friendly": "Товариська",
+        "stolichka": "Столичка",
+        "universiad": "Універсіада"
+    }
+
+    for game_id, game, game_datetime in completed_games:
+        result = game["result"]
+        type_name = type_names.get(game["type"], game["type"])
+
+        if result["status"] == "win":
+            result_emoji = "🟢"
+        elif result["status"] == "loss":
+            result_emoji = "🔴"
+        else:
+            result_emoji = "🟡"
+
+        message += f"{result_emoji} {type_name} - {game['date']}\n"
+        message += f"   Проти: {game['opponent']}\n"
+        message += f"   Рахунок: {result['our_score']}:{result['opponent_score']}\n"
+
+        if result.get("sets"):
+            sets_text = ", ".join([f"{s['our']}:{s['opponent']}" for s in result["sets"]])
+            message += f"   Сети: {sets_text}\n"
+
+        message += "\n"
+
+    wins = sum(1 for _, game, _ in completed_games if game["result"]["status"] == "win")
+    losses = sum(1 for _, game, _ in completed_games if game["result"]["status"] == "loss")
+
+    message += f"📊 Статистика: {wins} перемог, {losses} поразок"
+
+    if len(message) > 4000:
+        parts = [message[i:i + 4000] for i in range(0, len(message), 4000)]
+        for part in parts:
+            await query.message.reply_text(part)
+        await query.delete_message()
+    else:
+        await query.edit_message_text(message)
+
+
 def setup_admin_handlers(app):
     # /mvp_stats
     app.add_handler(CommandHandler("mvp_stats", mvp_stats))
@@ -368,7 +456,10 @@ def setup_admin_handlers(app):
     app.add_handler(CommandHandler("training_stats", training_stats))
     # /game_stats
     app.add_handler(CommandHandler("game_stats", game_stats))
+    # /game_results
+    app.add_handler(CommandHandler("game_results", game_results))
     # Buttons
+    app.add_handler(CallbackQueryHandler(handle_game_results_selection, pattern=r"^game_results_"))
     app.add_handler(CallbackQueryHandler(handle_training_stats_selection, pattern=r"^training_stats_"))
     app.add_handler(CallbackQueryHandler(handle_game_stats_selection, pattern=r"^game_stats_"))
     app.add_handler(CallbackQueryHandler(handle_mvp_stats_selection, pattern=r"^mvp_stats_"))
