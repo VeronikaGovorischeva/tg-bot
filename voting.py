@@ -1210,12 +1210,12 @@ async def notify_team_about_unlock(context, training, training_id, training_type
     old_team_name = "чоловічої" if old_team == "Male" else "жіночої"
 
     message = (
-        f"🎉 Доступне нове тренування!\n\n"
+        f"Доступне нове тренування!\n\n"
         f"Тренування {'в ' if training_type == 'constant' else ''}{date_str}{coach_str}\n"
         f"⏰ З {start_time} до {end_time}"
         f"{loc_str}"
         f"{desc_str}\n\n"
-        f"Це тренування було для {old_team_name} команди, але тепер відкрито для всіх!\n"
+        f"Це тренування тепер відкрито для всіх!\n"
         f"Чи будете брати участь?"
     )
 
@@ -1569,7 +1569,7 @@ def setup_voting_handlers(app):
     app.add_handler(create_general_vote_handler())
 
     # Other
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_vote_input))
+    # app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_vote_input))
     app.add_handler(CallbackQueryHandler(handle_unified_vote_selection, pattern=r"^unified_vote_\d+$"))
     app.add_handler(CallbackQueryHandler(handle_vote, pattern=r"^vote_(yes|no)_"))
     app.add_handler(CallbackQueryHandler(handle_unified_view_selection, pattern=r"^view_unified_\d+$"))

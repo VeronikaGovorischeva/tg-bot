@@ -470,9 +470,9 @@ def setup_admin_handlers(app):
     app.add_handler(CallbackQueryHandler(handle_game_stats_selection, pattern=r"^game_stats_"))
     app.add_handler(CallbackQueryHandler(handle_mvp_stats_selection, pattern=r"^mvp_stats_"))
     # Admin: /send_message
-    app.add_handler(CommandHandler("send_message", send_message_command))
     app.add_handler(CallbackQueryHandler(handle_send_message_team_selection, pattern=r"^send_team_"))
     # Admin: /notify_debtors
     app.add_handler(CommandHandler("notify_debtors", notify_debtors))
     # Handle message input (must be last text handler)
+    app.add_handler(CommandHandler("send_message", send_message_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_send_message_input))
