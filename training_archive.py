@@ -121,7 +121,7 @@ class TrainingVotesArchiver:
                 continue
 
             if "training_attendance" not in user_data:
-                user_data["training_attendance"] = {"attended": 0, "total": 0, "percentage": 0.0}
+                user_data["training_attendance"] = {"attended": 0, "total": 0}
 
             attendance = user_data["training_attendance"]
 

@@ -150,8 +150,7 @@ async def handle_mvp_stats_selection(update: Update, context: ContextTypes.DEFAU
 
     else:
         team_name = "чоловічої" if team_filter == "Male" else "жіночої"
-        team_emoji = "👨" if team_filter == "Male" else "👩"
-        message = f"🏆 MVP Статистика {team_emoji} {team_name} команди:\n\n"
+        message = f"🏆 MVP Статистика {team_name} команди:\n\n"
 
         if mvp_data:
             for name, team, count in mvp_data:
@@ -193,8 +192,8 @@ async def handle_attendance_stats_selection(update: Update, context: ContextType
 
         if team_filter == "Both" or team == team_filter:
             name = user_data.get("name", "Невідомий")
-            training_att = user_data.get("training_attendance", {"attended": 0, "total": 0, "percentage": 0.0})
-            game_att = user_data.get("game_attendance", {"attended": 0, "total": 0, "percentage": 0.0})
+            training_att = user_data.get("training_attendance", {"attended": 0, "total": 0})
+            game_att = user_data.get("game_attendance", {"attended": 0, "total": 0})
 
             attendance_data.append((name, team, training_att, game_att))
 
@@ -245,12 +244,12 @@ async def handle_training_stats_selection(update: Update, context: ContextTypes.
 
         if team_filter == "Both" or team == team_filter:
             name = user_data.get("name", "Невідомий")
-            training_att = user_data.get("training_attendance", {"attended": 0, "total": 0, "percentage": 0.0})
+            training_att = user_data.get("training_attendance", {"attended": 0, "total": 0})
 
             if training_att["total"] > 0:
                 training_data.append((name, team, training_att))
 
-    training_data.sort(key=lambda x: x[2]["percentage"], reverse=True)
+    training_data.sort(key=lambda x: (x[2]["attended"] / x[2]["total"]) if x[2]["total"] > 0 else 0, reverse=True)
 
     if team_filter == "Both":
         message = "🏐 Статистика відвідуваності тренувань (всі команди):\n\n"
@@ -295,12 +294,12 @@ async def handle_game_stats_selection(update: Update, context: ContextTypes.DEFA
 
         if team_filter == "Both" or team == team_filter:
             name = user_data.get("name", "Невідомий")
-            game_att = user_data.get("game_attendance", {"attended": 0, "total": 0, "percentage": 0.0})
+            game_att = user_data.get("game_attendance", {"attended": 0, "total": 0})
 
             if game_att["total"] > 0:
                 game_data.append((name, team, game_att))
 
-    game_data.sort(key=lambda x: x[2]["percentage"], reverse=True)
+    game_data.sort(key=lambda x: (x[2]["attended"] / x[2]["total"]) if x[2]["total"] > 0 else 0, reverse=True)
 
     if team_filter == "Both":
         message = "🏆 Статистика відвідуваності ігор (всі команди):\n\n"
@@ -330,7 +329,7 @@ async def my_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     team = user_data.get("team", "Невідомо")
     mvp = user_data.get("mvp", 0)
 
-    default_attendance = {"attended": 0, "total": 0, "percentage": 0.0}
+    default_attendance = {"attended": 0, "total": 0}
     training_att = user_data.get("training_attendance", default_attendance)
     game_att = user_data.get("game_attendance", default_attendance)
 
@@ -353,12 +352,13 @@ async def my_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     message += f"🎖️ MVP нагороди: {mvp}\n\n"
 
-    if training_att["total"] > 0 and training_percentage >= 90:
-        message += "🔥 Відмінна відвідуваність тренувань!"
-    elif training_att["total"] > 0 and training_percentage >= 70:
-        message += "💪 Гарна відвідуваність тренувань!"
-    elif training_att["total"] > 0:
-        message += "📈 Треба частіше ходити на тренування!"
+    # МОЖНА ДОДАТИ, АЛЕ ВПАДЛУ
+    # if training_att["total"] > 0 and training_percentage >= 90:
+    #     message += "🔥 Відмінна відвідуваність тренувань!"
+    # elif training_att["total"] > 0 and training_percentage >= 70:
+    #     message += "💪 Гарна відвідуваність тренувань!"
+    # elif training_att["total"] > 0:
+    #     message += "📈 Треба частіше ходити на тренування!"
 
     await update.message.reply_text(message)
 
@@ -433,6 +433,9 @@ async def handle_game_results_selection(update: Update, context: ContextTypes.DE
         if result.get("sets"):
             sets_text = ", ".join([f"{s['our']}:{s['opponent']}" for s in result["sets"]])
             message += f"   Сети: {sets_text}\n"
+
+        if game.get("mvp"):
+            message += f"   MVP: {game['mvp']}\n"
 
         message += "\n"
 

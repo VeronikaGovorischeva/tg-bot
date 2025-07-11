@@ -81,7 +81,7 @@ class RegistrationManager:
             data = user_data[user_id]
             team = Team(data.get("team")) if data.get("team") else None
 
-            default_attendance = {"attended": 0, "total": 0, "percentage": 0.0}
+            default_attendance = {"attended": 0, "total": 0}
 
             return UserProfile(
                 telegram_id=user_id,
