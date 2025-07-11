@@ -19,14 +19,14 @@ async def charge_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     options = []
     for tid, t in one_time_trainings.items():
-        if t.get("status") == "not charged" and t.get("with_coach"):
+        if t.get("status") == "not charged":
             date = t["date"]
             time = f"{t['start_hour']:02d}:{t['start_min']:02d}"
             label = f"{date} о {time}"
             options.append((tid, "one_time", label))
 
     for tid, t in constant_trainings.items():
-        if t.get("status") == "not charged" and t.get("with_coach"):
+        if t.get("status") == "not charged":
             weekday = t["weekday"]
             time = f"{t['start_hour']:02d}:{t['start_min']:02d}"
             day = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"][weekday]
@@ -141,9 +141,10 @@ async def handle_charge_amount_input(update: Update, context: ContextTypes.DEFAU
                 chat_id=int(uid),
                 text=(f"💳 Ти відвідав(-ла) тренування {training_datetime}.\n"
                       f"Сума до сплати: {per_person} грн\n"
-                      f"Карта для оплати: {CARD_NUMBER}\n\n"
+                      f"Карта для оплати: `{CARD_NUMBER}`\n\n"
                       f"Натисни кнопку нижче, коли оплатиш:"),
-                reply_markup=InlineKeyboardMarkup(keyboard)
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
             )
             success_count += 1
         except Exception as e:
@@ -151,6 +152,7 @@ async def handle_charge_amount_input(update: Update, context: ContextTypes.DEFAU
 
     save_data(payments, "payments")
     trainings[tid]["status"] = "charged"
+    trainings[tid]["voting_opened"] = False
     save_data(trainings, "one_time_trainings" if ttype == "one_time" else "constant_trainings")
 
     try:
@@ -243,8 +245,9 @@ async def pay_debt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     ]
 
     await update.message.reply_text(
-        f"Карта :{CARD_NUMBER}\nОберіть тренування для підтвердження оплати:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        f"Карта: `{CARD_NUMBER}`\nОберіть тренування для підтвердження оплати:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode='Markdown'
     )
 
 

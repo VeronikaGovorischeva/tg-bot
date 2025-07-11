@@ -28,7 +28,7 @@ def setup_scheduler(app):
         lambda: loop.call_soon_threadsafe(
             lambda: asyncio.create_task(start_voting(app))
         ),
-        'cron', hour=15, minute=0
+        'cron', hour=19, minute=12
     )
 
     # Send voting reminders daily at 19:00
@@ -52,7 +52,7 @@ def setup_scheduler(app):
         lambda: loop.call_soon_threadsafe(
             lambda: asyncio.create_task(reset_today_constant_trainings_status())
         ),
-        'cron', hour=14, minute=29
+        'cron', hour=19, minute=0
     )
 
     scheduler.start()
@@ -73,4 +73,4 @@ if __name__ == "__main__":
 
     app.add_error_handler(error)
 
-    app.run_polling(poll_interval=0.5)
+    app.run_polling(poll_interval=0.1)

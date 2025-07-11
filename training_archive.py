@@ -1,8 +1,6 @@
 import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from data import load_data, save_data
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes
 
 TRAINING_VOTES_ARCHIVE_FILE = "training_votes_archive"
 TRAINING_VOTES_FILE = "votes"
@@ -140,102 +138,6 @@ class TrainingVotesArchiver:
             return True
         return user_team == training_team
 
-    def get_user_training_history(self, user_id: str, limit: int = 10) -> list:
-        archive_data = load_data(self.archive_file, {})
-        user_history = []
-
-        for archive_id, entry in archive_data.items():
-            if user_id in entry.get("votes", {}):
-                vote_info = entry["votes"][user_id]
-                user_history.append({
-                    "date": entry["date"],
-                    "training_id": entry["training_id"],
-                    "vote": vote_info.get("vote"),
-                    "with_coach": entry.get("with_coach", False),
-                    "location": entry.get("location", ""),
-                    "description": entry.get("description", "")
-                })
-
-        user_history.sort(key=lambda x: datetime.datetime.strptime(x["date"], "%d.%m.%Y"), reverse=True)
-
-        return user_history[:limit]
-
-    def get_training_statistics(self, team: str = "Both", days: int = 30) -> Dict[str, Any]:
-        archive_data = load_data(self.archive_file, {})
-        cutoff_date = datetime.datetime.now().date() - datetime.timedelta(days=days)
-
-        stats = {
-            "total_trainings": 0,
-            "with_coach": 0,
-            "average_attendance": 0.0,
-            "most_active_users": [],
-            "attendance_by_date": {}
-        }
-
-        user_attendance = {}
-
-        for entry in archive_data.values():
-            try:
-                entry_date = datetime.datetime.strptime(entry["date"], "%d.%m.%Y").date()
-                if entry_date < cutoff_date:
-                    continue
-
-                if team != "Both" and entry.get("team") not in [team, "Both"]:
-                    continue
-
-                stats["total_trainings"] += 1
-
-                if entry.get("with_coach"):
-                    stats["with_coach"] += 1
-
-                yes_votes = 0
-                total_votes = 0
-
-                for user_id, vote_info in entry.get("votes", {}).items():
-                    total_votes += 1
-                    if vote_info.get("vote") == "yes":
-                        yes_votes += 1
-
-                        if user_id not in user_attendance:
-                            user_attendance[user_id] = {"name": vote_info.get("name", "Unknown"), "attended": 0,
-                                                        "total": 0}
-                        user_attendance[user_id]["attended"] += 1
-
-                    if user_id in user_attendance:
-                        user_attendance[user_id]["total"] += 1
-
-                if total_votes > 0:
-                    attendance_rate = (yes_votes / total_votes) * 100
-                    stats["attendance_by_date"][entry["date"]] = {
-                        "attended": yes_votes,
-                        "total": total_votes,
-                        "percentage": round(attendance_rate, 1)
-                    }
-
-            except Exception as e:
-                print(f"Error processing archive entry: {e}")
-                continue
-
-        if stats["attendance_by_date"]:
-            total_percentage = sum(data["percentage"] for data in stats["attendance_by_date"].values())
-            stats["average_attendance"] = round(total_percentage / len(stats["attendance_by_date"]), 1)
-
-        most_active = []
-        for user_id, data in user_attendance.items():
-            if data["total"] > 0:
-                percentage = (data["attended"] / data["total"]) * 100
-                most_active.append({
-                    "name": data["name"],
-                    "attended": data["attended"],
-                    "total": data["total"],
-                    "percentage": round(percentage, 1)
-                })
-
-        most_active.sort(key=lambda x: (x["percentage"], x["attended"]), reverse=True)
-        stats["most_active_users"] = most_active[:10]
-
-        return stats
-
 
 def archive_training_after_charge(training_id: str, training_type: str) -> bool:
     archiver = TrainingVotesArchiver()
@@ -268,44 +170,61 @@ async def enhanced_reset_today_constant_trainings_status():
     today = now.date()
 
     archiver = TrainingVotesArchiver()
+    one_time_trainings = load_data("one_time_trainings", {})
     constant_trainings = load_data("constant_trainings", {})
-    votes = load_data("votes", {"votes": {}})
     updated = False
 
+    for tid, training in one_time_trainings.items():
+        if training.get("status") != "not charged" or not training.get("with_coach"):
+            continue
+
+        try:
+            training_date = datetime.datetime.strptime(training['date'], "%d.%m.%Y").date()
+            if training_date < today:
+                training_id = f"{training['date']}_{training['start_hour']:02d}:{training['start_min']:02d}"
+
+                archive_success = archiver.archive_training_vote(training_id, training, force_archive=True)
+                if archive_success:
+                    print(f"✅ Archived one-time training {training_id}")
+
+                training["status"] = "charged"
+                training["voting_opened"] = False
+                updated = True
+                print(f"✅ Auto-charged one-time training {training_id} (no payment required)")
+
+        except Exception as e:
+            print(f"❌ Error processing one-time training {tid}: {e}")
+            continue
+
     for tid, training in constant_trainings.items():
+        if training.get("status") != "not charged" or not training.get("with_coach"):
+            continue
+
         weekday = training.get("weekday")
         if weekday is None:
             continue
 
-        days_ago = (now.weekday() - weekday) % 7
-        training_date = today - datetime.timedelta(days=days_ago)
-
-        if training_date > today:
-            continue
-
-        vote_id = f"const_{weekday}_{training['start_hour']:02d}:{training['start_min']:02d}"
-
         yesterday = today - datetime.timedelta(days=1)
+        days_ago = (yesterday.weekday() - weekday) % 7
+        training_date = yesterday - datetime.timedelta(days=days_ago)
 
         if training_date == yesterday:
-            if vote_id in votes["votes"]:
-                archiver.archive_training_vote(vote_id, training)
+            training_id = f"const_{weekday}_{training['start_hour']:02d}:{training['start_min']:02d}"
 
-            if training.get("status") != "not charged":
-                training["status"] = "not charged"
-                updated = True
+            archive_success = archiver.archive_training_vote(training_id, training, force_archive=True)
+            if archive_success:
+                print(f"✅ Archived constant training {training_id}")
 
-            if training.get("voting_opened", False):
-                training["voting_opened"] = False
-                updated = True
-
-        if training_date < yesterday:
-            if vote_id in votes["votes"]:
-                archiver.archive_training_vote(vote_id, training)
-                updated = True
+            training["status"] = "charged"
+            training["voting_opened"] = False
+            updated = True
+            print(f"✅ Auto-charged constant training {training_id} (no payment required)")
 
     if updated:
+        save_data(one_time_trainings, "one_time_trainings")
         save_data(constant_trainings, "constant_trainings")
+
         votes = load_data("votes", {"votes": {}})
         save_data(votes, "votes")
-        print("✅ Reset statuses and archived finished trainings.")
+
+        print("✅ Auto-charged all completed trainings with coach (no payments created)")

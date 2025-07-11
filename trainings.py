@@ -256,8 +256,8 @@ async def save_training_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
     training_data = {
         "team": context.user_data['training_team'],
         "with_coach": context.user_data['with_coach'],
-        "location": context.user_data['training_location'],  # NEW
-        "description": context.user_data.get('training_description'),  # NEW
+        "location": context.user_data['training_location'],
+        "description": context.user_data.get('training_description'),
         "start_hour": context.user_data['start_hour'],
         "start_min": context.user_data['start_min'],
         "end_hour": context.user_data['end_hour'],
@@ -395,8 +395,8 @@ def get_next_training(team=None):
             "end_min": training.get("end_min", 0),
             "team": str(training.get("team", "Both")),
             "with_coach": bool(training.get("with_coach", False)),
-            "location": training.get("location", "Не вказано"),  # NEW
-            "description": training.get("description"),  # NEW
+            "location": training.get("location", ""),
+            "description": training.get("description"),
             "type": "constant",
             "days_until": days_until
         })
@@ -426,8 +426,8 @@ def get_next_training(team=None):
             "end_min": training.get("end_min", 0),
             "team": str(training.get("team", "Both")),
             "with_coach": bool(training.get("with_coach", False)),
-            "location": training.get("location", "Не вказано"),  # NEW
-            "description": training.get("description"),  # NEW
+            "location": training.get("location", ""),
+            "description": training.get("description"),
             "type": "one-time",
             "days_until": days_until
         })
@@ -565,7 +565,7 @@ def format_next_training_message(user_id: str) -> str:
     coach_str = " (З тренером)" if training_info["with_coach"] else ""
 
     location = training_info.get("location", "")
-    location = "" if location.lower() == "наукма" else location
+    location = "" if location and location.lower() == "наукма" else location
     loc_str = f"\n📍{location}" if location else ""
 
     description = training_info.get("description", "")

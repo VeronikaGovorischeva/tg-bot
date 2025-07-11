@@ -30,6 +30,7 @@ async def start_voting(app: Application):
         if (training.get("start_voting") == today.strftime("%d.%m.%Y") and
                 not training.get("voting_opened", False)):
             await open_training_voting(app, training, training_id, users, "one-time")
+            training["status"]="not charged"
             training["voting_opened"] = True
             one_time_trainings[training_id] = training
     save_data(one_time_trainings, ONE_TIME_TRAININGS_FILE)
@@ -37,6 +38,7 @@ async def start_voting(app: Application):
         if (training.get("start_voting") == weekday and
                 not training.get("voting_opened", False)):
             await open_training_voting(app, training, training_id, users, "constant")
+            training["status"] = "not charged"
             training["voting_opened"] = True
             constant_trainings[training_id] = training
     save_data(constant_trainings, CONSTANT_TRAININGS_FILE)
