@@ -3,6 +3,7 @@ from enum import Enum
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, CallbackQueryHandler, MessageHandler, \
     filters
+from training_archive import enhanced_reset_today_constant_trainings_status
 
 from data import load_data, save_data
 from validation import is_authorized
@@ -291,17 +292,6 @@ async def save_training_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 save_data(trainings, file_path)
         except:
             pass
-
-    location = training_data["location"]
-    description = training_data.get("description")
-    desc_text = f" ({description})" if description else ""
-
-    message = f"✅ {MESSAGES['training_saved']}\n📍 Місце: {location}{desc_text}"
-
-    if update.message:
-        await update.message.reply_text(message)
-    elif update.callback_query:
-        await update.callback_query.message.reply_text(message)
 
 
 async def open_onetime_training_voting_immediately(context, training, training_id):
@@ -606,41 +596,7 @@ async def next_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def reset_today_constant_trainings_status():
-    now = datetime.datetime.now()
-    today = now.date()
-    current_time = now.time()
-
-    constant_trainings = load_data("constant_trainings", {})
-    votes = load_data("votes", {"votes": {}})
-    updated = False
-
-    for tid, training in constant_trainings.items():
-        weekday = training.get("weekday")
-        if weekday is None:
-            continue
-        days_ago = (now.weekday() - weekday) % 7
-        training_date = today - datetime.timedelta(days=days_ago)
-
-        if training_date > today:
-            continue
-
-        training_end_time = datetime.time(hour=training["end_hour"], minute=training["end_min"])
-        vote_id = f"const_{weekday}_{training['start_hour']:02d}:{training['start_min']:02d}"
-
-        if training_date == today and current_time >= training_end_time:
-            if training.get("status") != "not charged":
-                training["status"] = "not charged"
-                updated = True
-
-        if training_date < today:
-            if vote_id in votes["votes"]:
-                del votes["votes"][vote_id]
-                updated = True
-
-    if updated:
-        save_data(constant_trainings, "constant_trainings")
-        save_data(votes, "votes")
-        print("✅ Reset statuses and cleaned up votes for finished trainings.")
+    enhanced_reset_today_constant_trainings_status()
 
 
 def setup_training_handlers(app):

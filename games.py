@@ -404,8 +404,6 @@ async def handle_list_games(update: Update, context: ContextTypes.DEFAULT_TYPE):
             team_name = "чоловіча" if game['team'] == "Male" else "жіноча"
             message += f"   👥 Команда: {team_name}\n"
 
-        message += f"   🆔 ID: {game['id']}\n\n"
-
     if len(message) > 4000:
         parts = [message[i:i + 4000] for i in range(0, len(message), 4000)]
         for part in parts:
@@ -553,8 +551,6 @@ async def week_games(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if game.get('transport'):
             message += f"  🚌 {game['transport']}\n"
-
-        message += f"  🆔 ID: {game['id']}\n\n"
 
     await update.message.reply_text(message)
 

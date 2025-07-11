@@ -1,7 +1,7 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler, MessageHandler, filters, CallbackQueryHandler, \
     CommandHandler
-
+from training_archive import archive_training_after_charge
 from data import load_data, save_data
 from validation import ADMIN_IDS, is_authorized
 
@@ -152,6 +152,15 @@ async def handle_charge_amount_input(update: Update, context: ContextTypes.DEFAU
     save_data(payments, "payments")
     trainings[tid]["status"] = "charged"
     save_data(trainings, "one_time_trainings" if ttype == "one_time" else "constant_trainings")
+
+    try:
+        archive_success = archive_training_after_charge(training_id, ttype)
+        if archive_success:
+            print(f"✅ Training {training_id} archived successfully")
+        else:
+            print(f"⚠️ Failed to archive training {training_id}")
+    except Exception as e:
+        print(f"❌ Error archiving training {training_id}: {e}")
 
     await update.message.reply_text(
         f"✅ Нарахування завершено!\n"
