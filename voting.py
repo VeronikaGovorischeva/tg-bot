@@ -398,8 +398,8 @@ async def handle_general_vote_interaction(query, context, vote_id, vote_data):
         message += "Оберіть ваш варіант:"
 
     responses = load_data(GENERAL_VOTES_FILE, {"votes": {}})
-    if vote_id in responses and user_id in responses[vote_id]:
-        current_response = responses[vote_id][user_id]["response"]
+    if vote_id in responses["votes"] and user_id in responses["votes"][vote_id]:
+        current_response = responses["votes"][vote_id][user_id]["response"]
         message += f"\n\nВаша поточна відповідь: {current_response}"
 
     await query.edit_message_text(message, reply_markup=keyboard)
@@ -504,7 +504,6 @@ async def handle_vote_team(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         vote_id = str(max(int(k) for k in votes.keys()) + 1)
     else:
         vote_id = "1"
-    now = datetime.datetime.now()
 
     vote_data = {
         "vote_id": vote_id,
@@ -513,7 +512,6 @@ async def handle_vote_team(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "options": context.user_data.get('general_vote_options', []),
         "team": team,
         "creator_id": str(query.from_user.id),
-        "created_at": now.isoformat(),
         "is_active": True
     }
 
@@ -677,7 +675,7 @@ async def handle_general_vote_response(update: Update, context: ContextTypes.DEF
             if selected:
                 response_value = ", ".join(selected)
 
-                responses[vote_id][user_id] = {
+                responses["votes"][vote_id][user_id] = {
                     "name": user_name,
                     "response": response_value,
                     "timestamp": datetime.datetime.now().isoformat()
@@ -979,10 +977,10 @@ async def handle_vote_other_cast(update: Update, context: ContextTypes.DEFAULT_T
         option_idx = int(query.data.replace("vote_other_cast_option_", ""))
         response_value = vote_data["options"][option_idx]
 
-        responses = load_data(GENERAL_VOTES_FILE, {})
-        if vote_id not in responses:
-            responses[vote_id] = {}
-        responses[vote_id][user_id] = {
+        responses = load_data(GENERAL_VOTES_FILE, {"votes": {}})
+        if vote_id not in responses["votes"]:
+            responses["votes"][vote_id] = {}
+        responses["votes"][vote_id][user_id] = {
             "name": name,
             "response": response_value,
             "timestamp": datetime.datetime.now().isoformat()
