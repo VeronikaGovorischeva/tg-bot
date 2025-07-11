@@ -39,9 +39,9 @@ class UserProfile:
 
     def __post_init__(self):
         if self.training_attendance is None:
-            self.training_attendance = {"attended": 0, "total": 0, "percentage": 0.0}
+            self.training_attendance = {"attended": 0, "total": 0}
         if self.game_attendance is None:
-            self.game_attendance = {"attended": 0, "total": 0, "percentage": 0.0}
+            self.game_attendance = {"attended": 0, "total": 0}
 
     def is_registered(self) -> bool:
         return all([self.name, self.team])
@@ -191,16 +191,14 @@ def setup_registration_handlers(app):
 #             if "training_attendance" not in user_data:
 #                 user_data["training_attendance"] = {
 #                     "attended": 0,
-#                     "total": 0,
-#                     "percentage": 0.0
+#                     "total": 0
 #                 }
 #                 updated_count += 1
 #
 #             if "game_attendance" not in user_data:
 #                 user_data["game_attendance"] = {
 #                     "attended": 0,
-#                     "total": 0,
-#                     "percentage": 0.0
+#                     "total": 0
 #                 }
 #                 updated_count += 1
 #

@@ -208,10 +208,9 @@ async def handle_attendance_stats_selection(update: Update, context: ContextType
 
     if attendance_data:
         for name, team, training_att, game_att in attendance_data:
-            team_emoji = "👨" if team == "Male" else "👩"
-            message += f"{team_emoji} {name}:\n"
-            message += f"  🏐 Тренування: {training_att['attended']}/{training_att['total']} ({training_att['percentage']}%)\n"
-            message += f"  🏆 Ігри: {game_att['attended']}/{game_att['total']} ({game_att['percentage']}%)\n\n"
+            message += f"{name}:\n"
+            message += f"  🏐 Тренування: {training_att['attended']}/{training_att['total']} ({round(training_att['attended'] / training_att['total'] * 100) if training_att['total'] > 0 else 0}%)\n"
+            message += f"  🏆 Ігри: {game_att['attended']}/{game_att['total']} ({round(game_att['attended'] / game_att['total'] * 100) if game_att['total'] > 0 else 0}%)\n\n"
     else:
         message += "Немає даних про відвідуваність."
 
@@ -261,7 +260,7 @@ async def handle_training_stats_selection(update: Update, context: ContextTypes.
 
     if training_data:
         for i, (name, team, training_att) in enumerate(training_data, 1):
-            message += f"{i}. {name}: {training_att['attended']}/{training_att['total']} ({training_att['percentage']}%)\n"
+            message += f"{i}. {name}: {training_att['attended']}/{training_att['total']} ({round(training_att['attended'] / training_att['total'] * 100) if training_att['total'] > 0 else 0}%)\n"
     else:
         message += "Немає даних про відвідуваність тренувань."
 
@@ -311,7 +310,7 @@ async def handle_game_stats_selection(update: Update, context: ContextTypes.DEFA
 
     if game_data:
         for i, (name, team, game_att) in enumerate(game_data, 1):
-            message += f"{i}. {name}: {game_att['attended']}/{game_att['total']} ({game_att['percentage']}%)\n"
+            message += f"{i}. {name}: {game_att['attended']}/{game_att['total']} ({round(game_att['attended'] / game_att['total'] * 100) if game_att['total'] > 0 else 0}%)\n"
     else:
         message += "Немає даних про відвідуваність ігор."
 
@@ -340,19 +339,23 @@ async def my_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = f"📊 Моя статистика\n\n"
     message += f"{name} ({team_name} команда)\n\n"
 
+    training_percentage = round(training_att['attended'] / training_att['total'] * 100) if training_att[
+                                                                                               'total'] > 0 else 0
+    game_percentage = round(game_att['attended'] / game_att['total'] * 100) if game_att['total'] > 0 else 0
+
     message += f"🏐 Тренування:\n"
     message += f"   Відвідав: {training_att['attended']}/{training_att['total']}\n"
-    message += f"   Відсоток: {training_att['percentage']}%\n\n"
+    message += f"   Відсоток: {training_percentage}%\n\n"
 
     message += f"🏆 Ігри:\n"
     message += f"   Відвідав: {game_att['attended']}/{game_att['total']}\n"
-    message += f"   Відсоток: {game_att['percentage']}%\n\n"
+    message += f"   Відсоток: {game_percentage}%\n\n"
 
     message += f"🎖️ MVP нагороди: {mvp}\n\n"
 
-    if training_att["total"] > 0 and training_att["percentage"] >= 90:
+    if training_att["total"] > 0 and training_percentage >= 90:
         message += "🔥 Відмінна відвідуваність тренувань!"
-    elif training_att["total"] > 0 and training_att["percentage"] >= 70:
+    elif training_att["total"] > 0 and training_percentage >= 70:
         message += "💪 Гарна відвідуваність тренувань!"
     elif training_att["total"] > 0:
         message += "📈 Треба частіше ходити на тренування!"
