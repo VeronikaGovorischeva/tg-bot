@@ -9,6 +9,7 @@ from validation import is_authorized
 
 GAME_TYPE, GAME_TEAM, GAME_DATE, GAME_TIME, GAME_OPPONENT, GAME_LOCATION, GAME_ARRIVAL = range(300, 307)
 EDIT_GAME_SELECT, EDIT_GAME_FIELD, EDIT_GAME_VALUE = range(320, 323)
+CLOSE_GAME_SELECT, CLOSE_GAME_RESULTS, CLOSE_GAME_MVP = range(400, 403)
 
 GAMES_FILE = "games"
 GAME_VOTES_FILE = "game_votes"
@@ -560,6 +561,251 @@ async def cancel_game_creation(update: Update, context: ContextTypes.DEFAULT_TYP
     return ConversationHandler.END
 
 
+async def close_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if not is_authorized(update.message.from_user.id):
+        await update.message.reply_text("⛔ У вас немає прав для закриття ігор.")
+        return ConversationHandler.END
+
+    games = load_data(GAMES_FILE, {})
+
+    uncompleted_games = []
+    for game_id, game in games.items():
+        result = game.get("result", {})
+        if result.get("status") is None:
+            uncompleted_games.append((game_id, game))
+
+    if not uncompleted_games:
+        await update.message.reply_text("Немає ігор, які потребують закриття.")
+        return ConversationHandler.END
+
+    context.user_data["uncompleted_games"] = uncompleted_games
+
+    keyboard = []
+    for i, (game_id, game) in enumerate(uncompleted_games):
+        type_names = {
+            "friendly": "Товариська",
+            "stolichka": "Столичка",
+            "universiad": "Універсіада"
+        }
+        type_name = type_names.get(game.get('type'), game.get('type'))
+        team_name = "чоловіча" if game['team'] == "Male" else "жіноча" if game['team'] == "Female" else "змішана"
+
+        label = f"{type_name} ({team_name}) - {game['date']} проти {game['opponent']}"
+        keyboard.append([InlineKeyboardButton(label, callback_data=f"close_game_{i}")])
+
+    await update.message.reply_text(
+        "Оберіть гру для закриття:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+    return CLOSE_GAME_SELECT
+
+
+async def handle_close_game_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    idx = int(query.data.replace("close_game_", ""))
+    uncompleted_games = context.user_data.get("uncompleted_games", [])
+
+    if idx >= len(uncompleted_games):
+        await query.edit_message_text("⚠️ Помилка: гру не знайдено.")
+        return ConversationHandler.END
+
+    game_id, game = uncompleted_games[idx]
+    context.user_data["selected_game_id"] = game_id
+    context.user_data["selected_game"] = game
+
+    type_names = {
+        "friendly": "Товариська",
+        "stolichka": "Столичка",
+        "universiad": "Універсіада"
+    }
+    type_name = type_names.get(game.get('type'), game.get('type'))
+
+    await query.edit_message_text(
+        f"🏆 Закриття гри: {type_name}\n"
+        f"📅 {game['date']} проти {game['opponent']}\n\n"
+        f"Введіть результати гри у форматі:\n"
+        f"1 рядок: загальний рахунок (наприклад: 3:1)\n"
+        f"2 рядок: рахунок 1-го сету (наприклад: 25:20)\n"
+        f"3 рядок: рахунок 2-го сету (наприклад: 23:25)\n"
+        f"І так далі для кожного сету...\n\n"
+        f"Приклад:\n"
+        f"3:1\n"
+        f"25:20\n"
+        f"23:25\n"
+        f"25:18\n"
+        f"25:22"
+    )
+
+    return CLOSE_GAME_RESULTS
+
+
+async def handle_close_game_results(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    lines = update.message.text.strip().split('\n')
+
+    if len(lines) < 2:
+        await update.message.reply_text(
+            "⚠️ Некоректний формат. Потрібно мінімум 2 рядки:\n"
+            "1 рядок: загальний рахунок\n"
+            "2+ рядки: рахунки сетів"
+        )
+        return CLOSE_GAME_RESULTS
+
+    try:
+        main_score = lines[0].split(':')
+        if len(main_score) != 2:
+            raise ValueError("Неправильний формат загального рахунку")
+
+        our_score = int(main_score[0])
+        opponent_score = int(main_score[1])
+        total_sets = our_score + opponent_score
+
+        if len(lines) - 1 != total_sets:
+            await update.message.reply_text(
+                f"⚠️ Помилка: загальний рахунок {our_score}:{opponent_score} означає {total_sets} сетів,\n"
+                f"але ви ввели {len(lines) - 1} сетів."
+            )
+            return CLOSE_GAME_RESULTS
+
+        sets = []
+        for i in range(1, len(lines)):
+            set_score = lines[i].split(':')
+            if len(set_score) != 2:
+                raise ValueError(f"Неправильний формат сету {i}")
+
+            set_our = int(set_score[0])
+            set_opponent = int(set_score[1])
+            sets.append({"our": set_our, "opponent": set_opponent})
+
+        if our_score > opponent_score:
+            game_status = "win"
+        elif our_score < opponent_score:
+            game_status = "loss"
+        else:
+            game_status = "draw"
+
+        context.user_data["game_results"] = {
+            "our_score": our_score,
+            "opponent_score": opponent_score,
+            "sets": sets,
+            "status": game_status
+        }
+
+        game = context.user_data["selected_game"]
+        users = load_data("users", {})
+
+        team_players = []
+        for uid, user_data in users.items():
+            user_team = user_data.get("team")
+            if game.get("team") in [user_team, "Both"]:
+                team_players.append((uid, user_data.get("name", "Невідомий")))
+
+        if not team_players:
+            await update.message.reply_text("⚠️ Не знайдено гравців команди.")
+            return ConversationHandler.END
+
+        context.user_data["team_players"] = team_players
+
+        keyboard = []
+        for uid, name in team_players:
+            keyboard.append([InlineKeyboardButton(name, callback_data=f"mvp_{uid}")])
+
+        keyboard.append([InlineKeyboardButton("❌ Немає MVP", callback_data="mvp_none")])
+
+        status_emoji = "🟢" if game_status == "win" else "🔴" if game_status == "loss" else "🟡"
+
+        sets_text = ', '.join([f"{s['our']}:{s['opponent']}" for s in sets])
+
+        await update.message.reply_text(
+            f"✅ Результат збережено!\n\n"
+            f"{status_emoji} Рахунок: {our_score}:{opponent_score}\n"
+            f"Сети: {sets_text}\n\n"
+            f"Оберіть MVP гри:",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
+        return CLOSE_GAME_MVP
+
+    except (ValueError, IndexError) as e:
+        await update.message.reply_text(
+            f"⚠️ Помилка формату: {str(e)}\n\n"
+            f"Використовуйте формат:\n"
+            f"3:1\n"
+            f"25:20\n"
+            f"23:25\n"
+            f"25:18\n"
+            f"25:22"
+        )
+        return CLOSE_GAME_RESULTS
+
+
+async def handle_close_game_mvp(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    game_id = context.user_data["selected_game_id"]
+    game_results = context.user_data["game_results"]
+
+    mvp_name = None
+    if query.data != "mvp_none":
+        mvp_uid = query.data.replace("mvp_", "")
+        team_players = context.user_data["team_players"]
+
+        for uid, name in team_players:
+            if uid == mvp_uid:
+                mvp_name = name
+
+                users = load_data("users", {})
+                if uid in users:
+                    users[uid]["mvp"] = users[uid].get("mvp", 0) + 1
+                    save_data(users, "users")
+                break
+
+    games = load_data(GAMES_FILE, {})
+    if game_id in games:
+        games[game_id]["result"] = game_results
+        games[game_id]["mvp"] = mvp_name
+        save_data(games, GAMES_FILE)
+
+    game = context.user_data["selected_game"]
+    status_emoji = "🟢" if game_results["status"] == "win" else "🔴" if game_results["status"] == "loss" else "🟡"
+    status_text = "Перемога" if game_results["status"] == "win" else "Поразка" if game_results[
+                                                                                      "status"] == "loss" else "Нічия"
+
+    sets_text = ', '.join([f"{s['our']}:{s['opponent']}" for s in game_results['sets']])
+
+    message = f"✅ Гру успішно закрито!\n\n"
+    message += f"{status_emoji} {status_text}: {game_results['our_score']}:{game_results['opponent_score']}\n"
+    message += f"📅 {game['date']} проти {game['opponent']}\n"
+    message += f"Сети: {sets_text}\n"
+
+    if mvp_name:
+        message += f"🏆 MVP: {mvp_name}"
+
+    await query.edit_message_text(message)
+    return ConversationHandler.END
+
+
+async def cancel_close_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text("❌ Закриття гри скасовано.")
+    return ConversationHandler.END
+
+
+def create_close_game_handler():
+    return ConversationHandler(
+        entry_points=[CommandHandler("close_game", close_game)],
+        states={
+            CLOSE_GAME_SELECT: [CallbackQueryHandler(handle_close_game_selection, pattern=r"^close_game_\d+$")],
+            CLOSE_GAME_RESULTS: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_close_game_results)],
+            CLOSE_GAME_MVP: [CallbackQueryHandler(handle_close_game_mvp, pattern=r"^mvp_")]
+        },
+        fallbacks=[CommandHandler("cancel", cancel_close_game)],
+        allow_reentry=True
+    )
+
+
 def create_game_add_handler():
     return ConversationHandler(
         entry_points=[CommandHandler("add_game", add_game)],
@@ -587,6 +833,8 @@ def setup_game_handlers(app):
     app.add_handler(create_game_add_handler())
     # Admin: /delete_game
     app.add_handler(CommandHandler("delete_game", delete_game))
+    # Admin: /close_game
+    app.add_handler(create_close_game_handler())
 
     # Callback handlers
     app.add_handler(CallbackQueryHandler(handle_list_games, pattern=r"^list_games_"))
