@@ -243,7 +243,7 @@ async def pay_debt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     ]
 
     await update.message.reply_text(
-        "Оберіть тренування для підтвердження оплати:",
+        f"Карта :{CARD_NUMBER}\nОберіть тренування для підтвердження оплати:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
@@ -408,7 +408,7 @@ def setup_payment_handlers(app):
     # Admin: /view_payments
     app.add_handler(CommandHandler("view_payments", view_payments))
 
-    #Other
+    # Other
     app.add_handler(CallbackQueryHandler(handle_payment_confirmation, pattern=r"^paid_yes_.*"))
     app.add_handler(CallbackQueryHandler(handle_pay_debt_selection, pattern=r"^paydebt_select_\d+$"))
     app.add_handler(CallbackQueryHandler(handle_pay_debt_confirmation, pattern=r"^paydebt_confirm_yes$"))

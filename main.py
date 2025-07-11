@@ -52,7 +52,7 @@ def setup_scheduler(app):
         lambda: loop.call_soon_threadsafe(
             lambda: asyncio.create_task(reset_today_constant_trainings_status())
         ),
-        'cron', hour=19, minute=0
+        'cron', hour=14, minute=29
     )
 
     scheduler.start()

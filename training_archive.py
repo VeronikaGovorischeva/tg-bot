@@ -263,10 +263,9 @@ def archive_training_after_charge(training_id: str, training_type: str) -> bool:
     return archiver.archive_training_vote(training_id, training_data, force_archive=True)
 
 
-def enhanced_reset_today_constant_trainings_status():
+async def enhanced_reset_today_constant_trainings_status():
     now = datetime.datetime.now()
     today = now.date()
-    current_time = now.time()
 
     archiver = TrainingVotesArchiver()
     constant_trainings = load_data("constant_trainings", {})
@@ -284,10 +283,11 @@ def enhanced_reset_today_constant_trainings_status():
         if training_date > today:
             continue
 
-        training_end_time = datetime.time(hour=training["end_hour"], minute=training["end_min"])
         vote_id = f"const_{weekday}_{training['start_hour']:02d}:{training['start_min']:02d}"
 
-        if training_date == today and current_time >= training_end_time:
+        yesterday = today - datetime.timedelta(days=1)
+
+        if training_date == yesterday:
             if vote_id in votes["votes"]:
                 archiver.archive_training_vote(vote_id, training)
 
@@ -295,7 +295,11 @@ def enhanced_reset_today_constant_trainings_status():
                 training["status"] = "not charged"
                 updated = True
 
-        if training_date < today:
+            if training.get("voting_opened", False):
+                training["voting_opened"] = False
+                updated = True
+
+        if training_date < yesterday:
             if vote_id in votes["votes"]:
                 archiver.archive_training_vote(vote_id, training)
                 updated = True
@@ -305,71 +309,3 @@ def enhanced_reset_today_constant_trainings_status():
         votes = load_data("votes", {"votes": {}})
         save_data(votes, "votes")
         print("✅ Reset statuses and archived finished trainings.")
-
-
-async def training_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.message.from_user.id)
-    archiver = TrainingVotesArchiver()
-
-    history = archiver.get_user_training_history(user_id, limit=15)
-
-    if not history:
-        await update.message.reply_text("📝 У вас поки що немає історії тренувань.")
-        return
-
-    message = "📝 Моя історія тренувань (останні 15):\n\n"
-
-    for entry in history:
-        status_emoji = "✅" if entry["vote"] == "yes" else "❌"
-        coach_text = " (З тренером)" if entry["with_coach"] else ""
-
-        message += f"{status_emoji} {entry['date']}{coach_text}\n"
-
-        if entry["description"]:
-            message += f"   ℹ️ {entry['description']}\n"
-
-        if entry["location"] and entry["location"].lower() != "наукма":
-            message += f"   📍 {entry['location']}\n"
-
-        message += "\n"
-
-    await update.message.reply_text(message)
-
-
-async def detailed_training_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("Чоловіча команда", callback_data="detailed_stats_Male"),
-            InlineKeyboardButton("Жіноча команда", callback_data="detailed_stats_Female")
-        ],
-        [InlineKeyboardButton("Всі команди", callback_data="detailed_stats_Both")]
-    ])
-
-    await update.message.reply_text(
-        "📊 Детальна статистика тренувань (останні 30 днів)\n\nОберіть команду:",
-        reply_markup=keyboard
-    )
-
-
-async def handle_detailed_stats_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    team = query.data.replace("detailed_stats_", "")
-    archiver = TrainingVotesArchiver()
-
-    stats = archiver.get_training_statistics(team=team, days=30)
-
-    team_name = "чоловічої" if team == "Male" else "жіночої" if team == "Female" else "всіх команд"
-
-    message = f"📊 Статистика тренувань {team_name} (30 днів):\n\n"
-    message += f"🏐 Всього тренувань: {stats['total_trainings']}\n"
-    message += f" З тренером: {stats['with_coach']}\n"
-    message += f"📈 Середня відвідуваність: {stats['average_attendance']}%\n\n"
-
-    if stats['most_active_users']:
-        message += "🏆 Топ-5 за відвідуваністю:\n"
-        for i, user in enumerate(stats['most_active_users'][:5], 1):
-            message += f"{i}. {user['name']}: {user['attended']}/{user['total']} ({user['percentage']}%)\n"
-
-    await query.edit_message_text(message)

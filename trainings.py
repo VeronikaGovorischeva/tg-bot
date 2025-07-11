@@ -595,8 +595,8 @@ async def next_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(format_next_training_message(user_id))
 
 
-def reset_today_constant_trainings_status():
-    enhanced_reset_today_constant_trainings_status()
+async def reset_today_constant_trainings_status():
+    await enhanced_reset_today_constant_trainings_status()
 
 
 def setup_training_handlers(app):

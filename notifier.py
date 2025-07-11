@@ -1,4 +1,3 @@
-import asyncio
 from datetime import datetime, timedelta
 from data import load_data, save_data
 from telegram.ext import Application
@@ -33,10 +32,14 @@ async def start_voting(app: Application):
             await open_training_voting(app, training, training_id, users, "one-time")
             training["voting_opened"] = True
             one_time_trainings[training_id] = training
-            save_data(one_time_trainings, ONE_TIME_TRAININGS_FILE)
+    save_data(one_time_trainings, ONE_TIME_TRAININGS_FILE)
     for training_id, training in constant_trainings.items():
-        if training.get("start_voting") == weekday:
+        if (training.get("start_voting") == weekday and
+                not training.get("voting_opened", False)):
             await open_training_voting(app, training, training_id, users, "constant")
+            training["voting_opened"] = True
+            constant_trainings[training_id] = training
+    save_data(constant_trainings, CONSTANT_TRAININGS_FILE)
 
 
 async def check_voting_and_notify(app: Application):
@@ -238,7 +241,7 @@ async def send_game_reminder(app, game, game_id, users, game_votes):
             reply_markup = keyboard
 
         elif user_vote.get("vote") == "yes":
-            message = base_message + "✅ Ти записаний на гру. До зустрічі завтра!"
+            message = base_message + "✅ Ти записаний на гру. Удачі завтра!"
             reply_markup = None
 
         else:
