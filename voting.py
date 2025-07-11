@@ -5,7 +5,6 @@ from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, Mes
     filters, ConversationHandler
 
 from data import load_data, save_data
-from trainings import get_next_week_trainings
 from validation import is_authorized
 
 VOTE_TYPE, VOTE_QUESTION, VOTE_OPTIONS, VOTE_TEAM = range(200, 204)
@@ -20,6 +19,8 @@ GAMES_FILE = "games"
 GAME_VOTES_FILE = "game_votes"
 DEFAULT_VOTES_STRUCTURE = {"votes": {}}
 VOTES_LIMIT = 14
+ONE_TIME_TRAININGS_FILE = "one_time_trainings"
+CONSTANT_TRAININGS_FILE = "constant_trainings"
 
 
 class VoteType:
@@ -84,60 +85,55 @@ class UnifiedVoteManager:
         return all_votes
 
     def _get_training_votes(self, user_id: str, user_team: str):
-        today = datetime.datetime.today().date()
-        current_hour = datetime.datetime.now().hour
-        trainings = get_next_week_trainings(user_team)
+        one_time_trainings = load_data(ONE_TIME_TRAININGS_FILE, {})
+        constant_trainings = load_data(CONSTANT_TRAININGS_FILE, {})
+
         training_votes = []
+        votes_data = load_data(TRAINING_VOTES_FILE, DEFAULT_VOTES_STRUCTURE)
 
-        for training in trainings:
-            start_voting = training.get("start_voting")
+        for training_id, training in one_time_trainings.items():
+            if training.get("team") not in [user_team, "Both"]:
+                continue
 
-            if training["type"] == "one-time":
-                try:
-                    if isinstance(start_voting, str):
-                        start_date = datetime.datetime.strptime(start_voting, "%d.%m.%Y").date()
-                    else:
-                        start_date = start_voting
-                except Exception:
-                    continue
+            if not training.get("voting_opened", False):
+                continue
 
-                if (start_date < today or (start_date == today and current_hour >= 15)):
-                    date_str = training["date"] if isinstance(training["date"], str) else training["date"].strftime(
-                        "%d.%m.%Y")
-                    training_id = f"{date_str}_{training['start_hour']:02d}:{training['start_min']:02d}"
+            vote_id = f"{training['date']}_{training['start_hour']:02d}:{training['start_min']:02d}"
 
-                    votes = load_data(TRAINING_VOTES_FILE, DEFAULT_VOTES_STRUCTURE)
-                    yes_votes = 0
-                    if training_id in votes["votes"]:
-                        yes_votes = sum(1 for v in votes["votes"][training_id].values() if v["vote"] == "yes")
+            yes_votes = 0
+            if vote_id in votes_data["votes"]:
+                yes_votes = sum(1 for v in votes_data["votes"][vote_id].values() if v["vote"] == "yes")
 
-                    if yes_votes < VOTES_LIMIT:
-                        label = self._format_training_label(training, training_id)
-                        training_votes.append({
-                            "type": "training",
-                            "id": training_id,
-                            "label": label,
-                            "data": training
-                        })
-            else:
-                if isinstance(start_voting, int):
-                    voting_started = ((today.weekday() - start_voting) % 7) <= 6
-                    if voting_started:
-                        training_id = f"const_{training['weekday']}_{training['start_hour']:02d}:{training['start_min']:02d}"
+            if yes_votes < VOTES_LIMIT:
+                label = self._format_training_label(training, vote_id)
+                training_votes.append({
+                    "type": "training",
+                    "id": vote_id,
+                    "label": label,
+                    "data": training
+                })
 
-                        votes = load_data(TRAINING_VOTES_FILE, DEFAULT_VOTES_STRUCTURE)
-                        yes_votes = 0
-                        if training_id in votes["votes"]:
-                            yes_votes = sum(1 for v in votes["votes"][training_id].values() if v["vote"] == "yes")
+        for training_id, training in constant_trainings.items():
+            if training.get("team") not in [user_team, "Both"]:
+                continue
 
-                        if yes_votes < VOTES_LIMIT:
-                            label = self._format_training_label(training, training_id)
-                            training_votes.append({
-                                "type": "training",
-                                "id": training_id,
-                                "label": label,
-                                "data": training
-                            })
+            if not training.get("voting_opened", False):
+                continue
+
+            vote_id = f"const_{training['weekday']}_{training['start_hour']:02d}:{training['start_min']:02d}"
+
+            yes_votes = 0
+            if vote_id in votes_data["votes"]:
+                yes_votes = sum(1 for v in votes_data["votes"][vote_id].values() if v["vote"] == "yes")
+
+            if yes_votes < VOTES_LIMIT:
+                label = self._format_training_label(training, vote_id)
+                training_votes.append({
+                    "type": "training",
+                    "id": vote_id,
+                    "label": label,
+                    "data": training
+                })
 
         return training_votes
 
@@ -188,12 +184,11 @@ class UnifiedVoteManager:
         return general_votes
 
     def _format_training_label(self, training, training_id):
-        if training["type"] == "one-time":
-            date_str = training["date"].strftime("%d.%m.%Y") if isinstance(training["date"], datetime.date) else \
-                training["date"]
+        if training.get("type") == "one-time" or "const_" not in training_id:
+            date_str = training.get("date", "")
         else:
-            date_str = WEEKDAYS[
-                training["date"].weekday() if isinstance(training["date"], datetime.date) else training["weekday"]]
+            weekday = training.get("weekday", 0)
+            date_str = WEEKDAYS[weekday] if 0 <= weekday < len(WEEKDAYS) else "Невідомо"
 
         time_str = f"{training['start_hour']:02d}:{training['start_min']:02d}"
         base_label = f"🏐 {date_str} {time_str}"
@@ -1261,47 +1256,43 @@ class UnifiedViewManager:
         return all_votes
 
     def _get_active_training_votes(self):
-        today = datetime.datetime.today().date()
-
-        all_trainings = []
-        seen_trainings = set()
-
-        for team in ["Male", "Female", "Both"]:
-            team_trainings = get_next_week_trainings(team)
-            for training in team_trainings:
-                if training["type"] == "one-time":
-                    date_key = training["date"] if isinstance(training["date"], str) else training["date"].strftime(
-                        "%d.%m.%Y")
-                    unique_key = (date_key, training['start_hour'], training['start_min'], training.get('team', 'Both'))
-                else:
-                    unique_key = (training['weekday'], training['start_hour'], training['start_min'],
-                                  training.get('team', 'Both'))
-
-                if unique_key not in seen_trainings:
-                    seen_trainings.add(unique_key)
-                    all_trainings.append(training)
+        one_time_trainings = load_data(ONE_TIME_TRAININGS_FILE, {})
+        constant_trainings = load_data(CONSTANT_TRAININGS_FILE, {})
 
         training_votes = []
         votes_data = load_data(TRAINING_VOTES_FILE, DEFAULT_VOTES_STRUCTURE)
 
-        for training in all_trainings:
-            if training["type"] == "one-time":
-                date_str = training["date"] if isinstance(training["date"], str) else training["date"].strftime(
-                    "%d.%m.%Y")
-                training_id = f"{date_str}_{training['start_hour']:02d}:{training['start_min']:02d}"
-            else:
-                training_id = f"const_{training['weekday']}_{training['start_hour']:02d}:{training['start_min']:02d}"
+        for training_id, training in one_time_trainings.items():
+            if not training.get("voting_opened", False):
+                continue
 
-            if training_id in votes_data["votes"]:
-                if self._is_training_active(training, today):
-                    label = self._format_training_label(training, training_id)
-                    training_votes.append({
-                        "type": "training",
-                        "id": training_id,
-                        "label": label,
-                        "data": training,
-                        "votes": votes_data["votes"][training_id]
-                    })
+            vote_id = f"{training['date']}_{training['start_hour']:02d}:{training['start_min']:02d}"
+
+            if vote_id in votes_data["votes"] and votes_data["votes"][vote_id]:
+                label = self._format_training_label(training, vote_id)
+                training_votes.append({
+                    "type": "training",
+                    "id": vote_id,
+                    "label": label,
+                    "data": training,
+                    "votes": votes_data["votes"][vote_id]
+                })
+
+        for training_id, training in constant_trainings.items():
+            if not training.get("voting_opened", False):
+                continue
+
+            vote_id = f"const_{training['weekday']}_{training['start_hour']:02d}:{training['start_min']:02d}"
+
+            if vote_id in votes_data["votes"] and votes_data["votes"][vote_id]:
+                label = self._format_training_label(training, vote_id)
+                training_votes.append({
+                    "type": "training",
+                    "id": vote_id,
+                    "label": label,
+                    "data": training,
+                    "votes": votes_data["votes"][vote_id]
+                })
 
         return training_votes
 
@@ -1370,14 +1361,16 @@ class UnifiedViewManager:
             return True
 
     def _format_training_label(self, training, training_id):
-        if training["type"] == "one-time":
-            date_str = training["date"].strftime("%d.%m.%Y") if isinstance(training["date"], datetime.date) else \
-                training["date"]
+        # Визначаємо тип тренування по training_id
+        if "const_" in training_id:
+            # Постійне тренування
+            weekday = training.get("weekday", 0)
+            date_str = WEEKDAYS[weekday] if 0 <= weekday < len(WEEKDAYS) else "Невідомо"
         else:
-            date_str = WEEKDAYS[
-                training["date"].weekday() if isinstance(training["date"], datetime.date) else training["weekday"]]
+            # Одноразове тренування - date завжди рядок з бази
+            date_str = training.get("date", "")
 
-        time_str = f"{training['start_hour']:02d}:{training['start_min']:02d}"
+        time_str = f"{training.get('start_hour', 0):02d}:{training.get('start_min', 0):02d}"
         base_label = f"🏐 {date_str} {time_str}"
 
         extra_info = []
