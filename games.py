@@ -216,7 +216,6 @@ async def save_game_and_notify(update: Update, context: ContextTypes.DEFAULT_TYP
         "opponent": context.user_data['game_opponent'],
         "location": context.user_data['game_location'],
         "arrival_time": f"{context.user_data['arrival_hour']:02d}:{context.user_data['arrival_minute']:02d}",
-        "status": None,
         "result": {
             "our_score": 0,
             "opponent_score": 0,
