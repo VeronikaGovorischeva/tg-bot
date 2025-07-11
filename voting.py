@@ -204,6 +204,10 @@ class UnifiedVoteManager:
 
         location = training.get("location", "")
         if location and location.lower() != "наукма" and not location.startswith("http"):
+            if "(" in location and "http" in location:
+                clean_location = location.split("(")[0].strip()
+                if clean_location and clean_location.lower() != "наукма":
+                    extra_info.append(clean_location)
             extra_info.append(location)
 
         description = training.get("description", "")
@@ -781,47 +785,14 @@ async def vote_other_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     all_votes = []
 
-    trainings = get_next_week_trainings(admin_team)
-    today = datetime.datetime.today().date()
-    current_hour = datetime.datetime.now().hour
+    unified_manager = UnifiedVoteManager()
+    training_votes = unified_manager._get_training_votes("", admin_team)
 
-    for t in trainings:
-        start_voting = t.get("start_voting")
-        if t["type"] == "one-time":
-            try:
-                start_date = datetime.datetime.strptime(start_voting, "%d.%m.%Y").date()
-                if (start_date < today or (start_date == today and current_hour >= 15)):
-                    tid = f"{t['date']}_{t['start_hour']:02d}:{t['start_min']:02d}"
-
-                    votes = load_data(TRAINING_VOTES_FILE, DEFAULT_VOTES_STRUCTURE)
-                    yes_votes = 0
-                    if tid in votes["votes"]:
-                        yes_votes = sum(1 for v in votes["votes"][tid].values() if v["vote"] == "yes")
-
-                    if yes_votes < VOTES_LIMIT:
-                        date_str = t["date"].strftime("%d.%m.%Y") if isinstance(t["date"], datetime.date) else t["date"]
-                        label = f"🏐 {date_str} {t['start_hour']:02d}:{t['start_min']:02d}"
-                        if t.get("with_coach"):
-                            label += " (З тренером)"
-                        all_votes.append(("training", tid, label, t))
-            except:
-                continue
-        else:
-            if isinstance(start_voting, int) and (
-                    start_voting < today.weekday() or (start_voting == today.weekday() and current_hour >= 15)
-            ):
-                tid = f"const_{t['weekday']}_{t['start_hour']:02d}:{t['start_min']:02d}"
-
-                votes = load_data(TRAINING_VOTES_FILE, DEFAULT_VOTES_STRUCTURE)
-                yes_votes = 0
-                if tid in votes["votes"]:
-                    yes_votes = sum(1 for v in votes["votes"][tid].values() if v["vote"] == "yes")
-
-                if yes_votes < VOTES_LIMIT:
-                    label = f"🏐 {WEEKDAYS[t['weekday']]} {t['start_hour']:02d}:{t['start_min']:02d}"
-                    if t.get("with_coach"):
-                        label += " (З тренером)"
-                    all_votes.append(("training", tid, label, t))
+    for training_vote in training_votes:
+        training_id = training_vote["id"]
+        label = training_vote["label"]
+        training_data = training_vote["data"]
+        all_votes.append(("training", training_id, label, training_data))
 
     games = load_data(GAMES_FILE, {})
     now = datetime.datetime.now()
@@ -945,25 +916,42 @@ async def handle_vote_other_selection(update: Update, context: ContextTypes.DEFA
 
 
 async def handle_vote_other_cast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def save_general_response(vote_id: str, user_id: str, name: str, response: str):
+        responses = load_data(GENERAL_VOTES_FILE, {"votes": {}})
+        if vote_id not in responses["votes"]:
+            responses["votes"][vote_id] = {}
+        responses["votes"][vote_id][user_id] = {
+            "name": name,
+            "response": response,
+        }
+        save_data(responses, GENERAL_VOTES_FILE)
+
+    async def save_training_vote(vote_id: str, user_id: str, name: str, vote: str):
+        votes = load_data(TRAINING_VOTES_FILE, DEFAULT_VOTES_STRUCTURE)
+        if vote_id not in votes["votes"]:
+            votes["votes"][vote_id] = {}
+        votes["votes"][vote_id][user_id] = {"name": name, "vote": vote}
+        save_data(votes, TRAINING_VOTES_FILE)
+
+    async def save_game_vote(vote_id: str, user_id: str, name: str, vote: str):
+        game_votes = load_data(GAME_VOTES_FILE, {"votes": {}})
+        if vote_id not in game_votes["votes"]:
+            game_votes["votes"][vote_id] = {}
+        game_votes["votes"][vote_id][user_id] = {
+            "name": name,
+            "vote": vote,
+        }
+        save_data(game_votes, GAME_VOTES_FILE)
+
     if hasattr(update, 'message') and update.message:
         name = context.user_data["vote_other_name"]
         vote_id = context.user_data["vote_other_vote_id"]
         user_id = context.user_data["vote_other_id"]
         response_text = update.message.text
 
-        responses = load_data(GENERAL_VOTES_FILE, {"votes": {}})
-        if vote_id not in responses["votes"]:
-            responses["votes"][vote_id] = {}
-        responses["votes"][vote_id][user_id] = {
-            "name": name,
-            "response": response_text,
-            "timestamp": datetime.datetime.now().isoformat()
-        }
-        save_data(responses, GENERAL_VOTES_FILE)
-
+        await save_general_response(vote_id, user_id, name, response_text)
         await update.message.reply_text(f"✅ Текстова відповідь за '{name}' збережена: '{response_text}'")
         return ConversationHandler.END
-
     query = update.callback_query
     await query.answer()
 
@@ -977,90 +965,74 @@ async def handle_vote_other_cast(update: Update, context: ContextTypes.DEFAULT_T
         option_idx = int(query.data.replace("vote_other_cast_option_", ""))
         response_value = vote_data["options"][option_idx]
 
-        responses = load_data(GENERAL_VOTES_FILE, {"votes": {}})
-        if vote_id not in responses["votes"]:
-            responses["votes"][vote_id] = {}
-        responses["votes"][vote_id][user_id] = {
-            "name": name,
-            "response": response_value,
-            "timestamp": datetime.datetime.now().isoformat()
-        }
-        save_data(responses, GENERAL_VOTES_FILE)
+        if vote_data["type"] == "multiple_choice_single":
+            await save_general_response(vote_id, user_id, name, response_value)
+            await query.edit_message_text(f"✅ Голос за '{name}' збережено як '{response_value}'")
 
-        await query.edit_message_text(f"✅ Голос за '{name}' збережено як '{response_value}'")
+        elif vote_data["type"] == "multiple_choice_multi":
+            multi_key = f"vote_other_multi_{vote_id}"
+            if multi_key not in context.user_data:
+                context.user_data[multi_key] = []
 
-    elif query.data == "vote_other_cast_yes":
-        if vote_type == "training":
-            votes = load_data(TRAINING_VOTES_FILE, DEFAULT_VOTES_STRUCTURE)
-            if vote_id not in votes["votes"]:
-                votes["votes"][vote_id] = {}
-            votes["votes"][vote_id][user_id] = {"name": name, "vote": "yes"}
-            save_data(votes, TRAINING_VOTES_FILE)
+            selected = context.user_data[multi_key]
+            if response_value in selected:
+                selected.remove(response_value)
+            else:
+                selected.append(response_value)
 
-            await query.edit_message_text(
-                f"✅ Голос за '{name}' збережено як 'БУДЕ' на тренування {format_training_id(vote_id)}")
-
-        elif vote_type == "game":
-            game_votes = load_data(GAME_VOTES_FILE, {"votes": {}})
-            if vote_id not in game_votes["votes"]:
-                game_votes["votes"][vote_id] = {}
-            game_votes["votes"][vote_id][user_id] = {
-                "name": name,
-                "vote": "yes",
-            }
-            save_data(game_votes, GAME_VOTES_FILE)
-
-            await query.edit_message_text(f"✅ Голос за '{name}' збережено як 'БУДЕ' на гру")
-
-        elif vote_type == "general":
-            responses = load_data(GENERAL_VOTES_FILE, {})
-            if vote_id not in responses:
-                responses[vote_id] = {}
-            responses[vote_id][user_id] = {
-                "name": name,
-                "response": "Так",
-                "timestamp": datetime.datetime.now().isoformat()
-            }
-            save_data(responses, GENERAL_VOTES_FILE)
-
-            await query.edit_message_text(f"✅ Голос за '{name}' збережено як 'Так'")
-
-    elif query.data == "vote_other_cast_no":
-        if vote_type == "training":
-            votes = load_data(TRAINING_VOTES_FILE, DEFAULT_VOTES_STRUCTURE)
-            if vote_id not in votes["votes"]:
-                votes["votes"][vote_id] = {}
-            votes["votes"][vote_id][user_id] = {"name": name, "vote": "no"}
-            save_data(votes, TRAINING_VOTES_FILE)
+            keyboard = []
+            for i, option in enumerate(vote_data["options"]):
+                prefix = "☑️" if option in selected else "☐"
+                keyboard.append([InlineKeyboardButton(
+                    f"{prefix} {i + 1}. {option}",
+                    callback_data=f"vote_other_cast_option_{i}"
+                )])
+            keyboard.append([InlineKeyboardButton(
+                "✅ Підтвердити вибір",
+                callback_data="vote_other_cast_multi_confirm"
+            )])
 
             await query.edit_message_text(
-                f"✅ Голос за '{name}' збережено як 'НЕ БУДЕ' на тренування {format_training_id(vote_id)}")
+                f"Голосування за: {name}\n📊 {vote_data['question']}\n\nОберіть варіанти:",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+
+    elif query.data == "vote_other_cast_multi_confirm":
+        multi_key = f"vote_other_multi_{vote_id}"
+        selected = context.user_data.get(multi_key, [])
+
+        if selected:
+            response_value = ", ".join(selected)
+            await save_general_response(vote_id, user_id, name, response_value)
+
+            if multi_key in context.user_data:
+                del context.user_data[multi_key]
+
+            await query.edit_message_text(f"✅ Множинний вибір за '{name}' збережено: '{response_value}'")
+        else:
+            await query.answer("⚠️ Оберіть хоча б один варіант!", show_alert=True)
+            return
+
+    elif query.data in ["vote_other_cast_yes", "vote_other_cast_no"]:
+        is_yes = query.data == "vote_other_cast_yes"
+
+        if vote_type == "training":
+            vote_value = "yes" if is_yes else "no"
+            await save_training_vote(vote_id, user_id, name, vote_value)
+            action = "БУДЕ" if is_yes else "НЕ БУДЕ"
+            await query.edit_message_text(
+                f"✅ Голос за '{name}' збережено як '{action}' на тренування {format_training_id(vote_id)}")
 
         elif vote_type == "game":
-            game_votes = load_data(GAME_VOTES_FILE, {})
-            if vote_id not in game_votes:
-                game_votes[vote_id] = {}
-            game_votes[vote_id][user_id] = {
-                "name": name,
-                "vote": "no",
-                "timestamp": datetime.datetime.now().isoformat()
-            }
-            save_data(game_votes, GAME_VOTES_FILE)
-
-            await query.edit_message_text(f"✅ Голос за '{name}' збережено як 'НЕ БУДЕ' на гру")
+            vote_value = "yes" if is_yes else "no"
+            await save_game_vote(vote_id, user_id, name, vote_value)
+            action = "БУДЕ" if is_yes else "НЕ БУДЕ"
+            await query.edit_message_text(f"✅ Голос за '{name}' збережено як '{action}' на гру")
 
         elif vote_type == "general":
-            responses = load_data(GENERAL_VOTES_FILE, {})
-            if vote_id not in responses:
-                responses[vote_id] = {}
-            responses[vote_id][user_id] = {
-                "name": name,
-                "response": "Ні",
-                "timestamp": datetime.datetime.now().isoformat()
-            }
-            save_data(responses, GENERAL_VOTES_FILE)
-
-            await query.edit_message_text(f"✅ Голос за '{name}' збережено як 'Ні'")
+            response_value = "Так" if is_yes else "Ні"
+            await save_general_response(vote_id, user_id, name, response_value)
+            await query.edit_message_text(f"✅ Голос за '{name}' збережено як '{response_value}'")
 
     return ConversationHandler.END
 
@@ -1609,6 +1581,6 @@ def setup_voting_handlers(app):
     app.add_handler(CallbackQueryHandler(handle_vote, pattern=r"^vote_(yes|no)_"))
     app.add_handler(CallbackQueryHandler(handle_unified_view_selection, pattern=r"^view_unified_\d+$"))
     app.add_handler(CallbackQueryHandler(handle_view_votes_selection, pattern=r"^view_votes_\d+"))
-    app.add_handler(CallbackQueryHandler(handle_vote_other_cast, pattern=r"^vote_other_cast_(yes|no)$"))
+    app.add_handler(CallbackQueryHandler(handle_vote_other_cast, pattern=r"^vote_other_cast_"))
     app.add_handler(CallbackQueryHandler(handle_general_vote_response, pattern=r"^general_vote_"))
     app.add_handler(CallbackQueryHandler(handle_unlock_selection, pattern=r"^unlock_training_\d+"))
