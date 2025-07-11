@@ -74,5 +74,3 @@ if __name__ == "__main__":
     app.add_error_handler(error)
 
     app.run_polling(poll_interval=0.1)
-=======
-print("chill")
