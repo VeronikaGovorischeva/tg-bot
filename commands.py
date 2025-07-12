@@ -350,7 +350,27 @@ async def my_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message += f"   Відвідав: {game_att['attended']}/{game_att['total']}\n"
     message += f"   Відсоток: {game_percentage}%\n\n"
 
-    message += f"🎖️ MVP нагороди: {mvp}\n\n"
+    message += f"🎖️ MVP нагороди: {mvp}\n"
+
+    if mvp > 0:
+        games = load_data("games", {})
+        mvp_games = []
+
+        for game in games.values():
+            if game.get("mvp") == name:
+                mvp_games.append(game)
+
+        if mvp_games:
+            for game in mvp_games:
+                type_names = {
+                    "friendly": "Товариська",
+                    "stolichka": "Столичка",
+                    "universiad": "Універсіада"
+                }
+                type_name = type_names.get(game.get('type'), game.get('type'))
+                message += f"   {type_name} - {game['date']} проти *{game['opponent']}*\n"
+
+    message += "\n"
 
     # МОЖНА ДОДАТИ, АЛЕ ВПАДЛУ
     # if training_att["total"] > 0 and training_percentage >= 90:
@@ -360,7 +380,7 @@ async def my_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # elif training_att["total"] > 0:
     #     message += "📈 Треба частіше ходити на тренування!"
 
-    await update.message.reply_text(message)
+    await update.message.reply_text(message, parse_mode='markdown')
 
 
 async def game_results(update: Update, context: ContextTypes.DEFAULT_TYPE):
