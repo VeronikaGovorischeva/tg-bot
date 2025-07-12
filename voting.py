@@ -677,7 +677,6 @@ async def handle_general_vote_response(update: Update, context: ContextTypes.DEF
                 responses["votes"][vote_id][user_id] = {
                     "name": user_name,
                     "response": response_value,
-                    "timestamp": datetime.datetime.now().isoformat()
                 }
                 save_data(responses, GENERAL_VOTES_FILE)
 
@@ -720,7 +719,6 @@ async def handle_text_vote_input(update: Update, context: ContextTypes.DEFAULT_T
     responses["votes"][active_vote][user_id] = {
         "name": user_name,
         "response": update.message.text,
-        "timestamp": datetime.datetime.now().isoformat()
     }
     save_data(responses, GENERAL_VOTES_FILE)
 
@@ -1528,6 +1526,118 @@ async def handle_unified_view_selection(update: Update, context: ContextTypes.DE
         await query.edit_message_text(results_message)
 
 
+async def vote_notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_authorized(update.message.from_user.id):
+        await update.message.reply_text("⛔ У вас немає прав для надсилання нагадувань.")
+        return
+
+    general_votes = load_data(GENERAL_FILE, {})
+    general_responses = load_data(GENERAL_VOTES_FILE, {"votes": {}})
+
+    active_votes = []
+    for vote_id, vote_data in general_votes.items():
+        if vote_data.get("is_active", True):
+            active_votes.append((vote_id, vote_data))
+
+    if not active_votes:
+        await update.message.reply_text("Немає активних загальних голосувань.")
+        return
+
+    context.user_data["notify_vote_options"] = active_votes
+
+    keyboard = []
+    for i, (vote_id, vote_data) in enumerate(active_votes):
+        team = vote_data.get("team", "Both")
+        team_text = ""
+        if team == "Male":
+            team_text = " (чоловіча)"
+        elif team == "Female":
+            team_text = " (жіноча)"
+
+        label = f"{vote_data['question'][:40]}{'...' if len(vote_data['question']) > 40 else ''}{team_text}"
+        keyboard.append([InlineKeyboardButton(label, callback_data=f"notify_vote_{i}")])
+
+    await update.message.reply_text(
+        "Оберіть голосування для надсилання нагадування:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+async def handle_vote_notify_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    idx = int(query.data.replace("notify_vote_", ""))
+    vote_options = context.user_data.get("notify_vote_options", [])
+
+    if idx >= len(vote_options):
+        await query.edit_message_text("⚠️ Помилка: голосування не знайдено.")
+        return
+
+    vote_id, vote_data = vote_options[idx]
+
+    users = load_data("users", {})
+    general_responses = load_data(GENERAL_VOTES_FILE, {"votes": {}})
+
+    voted_users = set()
+    if vote_id in general_responses["votes"]:
+        voted_users = set(general_responses["votes"][vote_id].keys())
+
+    message = f"📢 Нагадування про голосування!\n\n"
+    message += f"❓ {vote_data['question']}\n\n"
+
+    if vote_data["type"] == VoteType.TEXT_RESPONSE:
+        message += "Натисніть кнопку нижче, щоб залишити відповідь."
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📝 Відповісти", callback_data=f"general_vote_{vote_id}_text")]
+        ])
+    elif vote_data["type"] == VoteType.YES_NO:
+        message += "Оберіть ваш варіант:"
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ Так", callback_data=f"general_vote_{vote_id}_yes"),
+                InlineKeyboardButton("❌ Ні", callback_data=f"general_vote_{vote_id}_no")
+            ]
+        ])
+    else:
+        message += "Оберіть ваш варіант:"
+        buttons = []
+        for i, option in enumerate(vote_data["options"]):
+            buttons.append([InlineKeyboardButton(
+                f"{i + 1}. {option}",
+                callback_data=f"general_vote_{vote_id}_option_{i}"
+            )])
+
+        if vote_data["type"] == VoteType.MULTIPLE_CHOICE_MULTI:
+            buttons.append(
+                [InlineKeyboardButton("✅ Підтвердити вибір", callback_data=f"general_vote_{vote_id}_confirm")])
+
+        keyboard = InlineKeyboardMarkup(buttons)
+
+    count = 0
+    for uid, user_info in users.items():
+        if vote_data.get("team") not in [user_info.get("team"), "Both"]:
+            continue
+
+        if uid in voted_users:
+            continue
+
+        try:
+            await context.bot.send_message(
+                chat_id=int(uid),
+                text=message,
+                reply_markup=keyboard
+            )
+            count += 1
+        except Exception as e:
+            print(f"❌ Помилка надсилання нагадування до {uid}: {e}")
+
+    await query.edit_message_text(
+        f"✅ Нагадування надіслано {count} користувачам\n"
+        f"📊 Голосування: {vote_data['question']}"
+    )
+
+
 def create_general_vote_handler():
     return ConversationHandler(
         entry_points=[CommandHandler("add_vote", add_vote)],
@@ -1564,12 +1674,13 @@ def setup_voting_handlers(app):
     app.add_handler(CommandHandler("unlock_training", unlock_training))
     # Admin: /vote_for
     app.add_handler(create_vot_for_handler())
-
     # Admin: /add_vote
     app.add_handler(create_general_vote_handler())
+    # Admin: vote_notify
+    app.add_handler(CommandHandler("vote_notify", vote_notify))
 
     # Other
-    # app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_vote_input))
+    # app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_vote_input)) # WITH THIS UNCOMMENTED SEND MESSAGE DOESN'T WORK
     app.add_handler(CallbackQueryHandler(handle_unified_vote_selection, pattern=r"^unified_vote_\d+$"))
     app.add_handler(CallbackQueryHandler(handle_vote, pattern=r"^vote_(yes|no)_"))
     app.add_handler(CallbackQueryHandler(handle_unified_view_selection, pattern=r"^view_unified_\d+$"))
@@ -1577,3 +1688,4 @@ def setup_voting_handlers(app):
     app.add_handler(CallbackQueryHandler(handle_vote_other_cast, pattern=r"^vote_other_cast_"))
     app.add_handler(CallbackQueryHandler(handle_general_vote_response, pattern=r"^general_vote_"))
     app.add_handler(CallbackQueryHandler(handle_unlock_selection, pattern=r"^unlock_training_\d+"))
+    app.add_handler(CallbackQueryHandler(handle_vote_notify_selection, pattern=r"^notify_vote_\d+$"))
