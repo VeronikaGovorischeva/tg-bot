@@ -787,6 +787,311 @@ async def handle_close_game_mvp(update: Update, context: ContextTypes.DEFAULT_TY
     return ConversationHandler.END
 
 
+async def edit_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if not is_authorized(update.message.from_user.id):
+        await update.message.reply_text("⛔ У вас немає прав для редагування ігор.")
+        return ConversationHandler.END
+
+    games = load_data(GAMES_FILE, {})
+
+    if not games:
+        await update.message.reply_text("Немає ігор для редагування.")
+        return ConversationHandler.END
+
+    context.user_data["all_games"] = list(games.items())
+
+    keyboard = []
+    for i, (game_id, game) in enumerate(games.items()):
+        type_names = {
+            "friendly": "Товариська",
+            "stolichka": "Столичка",
+            "universiad": "Універсіада"
+        }
+        type_name = type_names.get(game.get('type'), game.get('type'))
+        team_name = "чоловіча" if game['team'] == "Male" else "жіноча" if game['team'] == "Female" else "змішана"
+
+        label = f"{type_name} ({team_name}) - {game['date']} проти {game['opponent']}"
+        keyboard.append([InlineKeyboardButton(label, callback_data=f"edit_game_select_{i}")])
+
+    await update.message.reply_text(
+        "Оберіть гру для редагування:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+    return EDIT_GAME_SELECT
+
+
+async def handle_edit_game_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    idx = int(query.data.replace("edit_game_select_", ""))
+    all_games = context.user_data.get("all_games", [])
+
+    if idx >= len(all_games):
+        await query.edit_message_text("⚠️ Помилка: гру не знайдено.")
+        return ConversationHandler.END
+
+    game_id, game = all_games[idx]
+    context.user_data["edit_game_id"] = game_id
+    context.user_data["edit_game_data"] = game.copy()
+    context.user_data["edit_changes"] = {}
+
+    keyboard = [
+        [InlineKeyboardButton("📅 Дата", callback_data="edit_field_date")],
+        [InlineKeyboardButton("⏰ Час", callback_data="edit_field_time")],
+        [InlineKeyboardButton("🏆 Суперник", callback_data="edit_field_opponent")],
+        [InlineKeyboardButton("📍 Місце", callback_data="edit_field_location")],
+        [InlineKeyboardButton("⏰ Час прибуття", callback_data="edit_field_arrival")],
+        [InlineKeyboardButton("👥 Команда", callback_data="edit_field_team")],
+        [InlineKeyboardButton("✅ Зберегти зміни", callback_data="edit_save_changes")],
+        [InlineKeyboardButton("❌ Скасувати", callback_data="edit_cancel")]
+    ]
+
+    type_names = {
+        "friendly": "Товариська",
+        "stolichka": "Столичка",
+        "universiad": "Універсіада"
+    }
+    type_name = type_names.get(game.get('type'), game.get('type'))
+
+    message = f"🎮 Редагування гри: {type_name}\n\n"
+    message += f"📅 Дата: {game['date']}\n"
+    message += f"⏰ Час: {game['time']}\n"
+    message += f"🏆 Суперник: {game['opponent']}\n"
+    message += f"📍 Місце: {game['location']}\n"
+    message += f"⏰ Прибуття: {game['arrival_time']}\n"
+    message += f"👥 Команда: {'чоловіча' if game['team'] == 'Male' else 'жіноча' if game['team'] == 'Female' else 'обидві'}\n\n"
+    message += "Оберіть що хочете змінити:"
+
+    await query.edit_message_text(message, reply_markup=InlineKeyboardMarkup(keyboard))
+    return EDIT_GAME_FIELD
+
+
+async def handle_edit_game_field(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "edit_cancel":
+        await query.edit_message_text("❌ Редагування скасовано.")
+        return ConversationHandler.END
+
+    if query.data == "edit_save_changes":
+        changes = context.user_data.get("edit_changes", {})
+        if not changes:
+            await query.answer("⚠️ Немає змін для збереження!", show_alert=True)
+            return EDIT_GAME_FIELD
+
+        game_id = context.user_data["edit_game_id"]
+        games = load_data(GAMES_FILE, {})
+
+        old_game = games[game_id].copy()
+
+        for field, new_value in changes.items():
+            games[game_id][field] = new_value
+
+        save_data(games, GAMES_FILE)
+
+        await send_game_update_notification(context, old_game, games[game_id], changes)
+
+        changes_text = "\n".join([f"• {field}: {value}" for field, value in changes.items()])
+        await query.edit_message_text(
+            f"✅ Зміни збережено!\n\n"
+            f"Змінено:\n{changes_text}\n\n"
+            f"Команду сповіщено про зміни."
+        )
+        return ConversationHandler.END
+
+    field = query.data.replace("edit_field_", "")
+    context.user_data["edit_current_field"] = field
+
+    field_names = {
+        "date": "дату (ДД.ММ.РРРР)",
+        "time": "час (ГГ:ХХ)",
+        "opponent": "назву команди суперника",
+        "location": "місце проведення гри",
+        "arrival": "час прибуття (ГГ:ХХ)",
+        "team": "команду"
+    }
+
+    if field == "team":
+        keyboard = [
+            [InlineKeyboardButton("Чоловіча", callback_data="edit_value_Male")],
+            [InlineKeyboardButton("Жіноча", callback_data="edit_value_Female")],
+            [InlineKeyboardButton("Обидві", callback_data="edit_value_Both")]
+        ]
+        await query.edit_message_text(
+            f"Оберіть нову команду:",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return EDIT_GAME_VALUE
+    else:
+        await query.edit_message_text(f"Введіть нову {field_names[field]}:")
+        return EDIT_GAME_VALUE
+
+
+async def handle_edit_game_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    field = context.user_data.get("edit_current_field")
+
+    if hasattr(update, 'callback_query') and update.callback_query:
+        query = update.callback_query
+        await query.answer()
+        new_value = query.data.replace("edit_value_", "")
+
+        context.user_data["edit_changes"][field] = new_value
+
+        team_names = {"Male": "чоловіча", "Female": "жіноча", "Both": "обидві"}
+        await query.edit_message_text(f"✅ Команда змінена на: {team_names[new_value]}")
+
+    else:
+        new_value = update.message.text.strip()
+
+        if field == "date":
+            try:
+                datetime.datetime.strptime(new_value, "%d.%m.%Y")
+            except ValueError:
+                await update.message.reply_text("⚠️ Неправильний формат дати. Використовуйте ДД.ММ.РРРР")
+                return EDIT_GAME_VALUE
+
+        elif field in ["time", "arrival"]:
+            try:
+                datetime.datetime.strptime(new_value, "%H:%M")
+            except ValueError:
+                await update.message.reply_text("⚠️ Неправильний формат часу. Використовуйте ГГ:ХХ")
+                return EDIT_GAME_VALUE
+
+            if field == "arrival":
+                context.user_data["edit_changes"]["arrival_time"] = new_value
+            else:
+                context.user_data["edit_changes"][field] = new_value
+        else:
+            context.user_data["edit_changes"][field] = new_value
+
+        field_names = {
+            "date": "дата",
+            "time": "час",
+            "opponent": "суперник",
+            "location": "місце",
+            "arrival": "час прибуття"
+        }
+
+        await update.message.reply_text(f"✅ {field_names[field].capitalize()} змінено на: {new_value}")
+
+    game_data = context.user_data["edit_game_data"]
+    changes = context.user_data.get("edit_changes", {})
+
+    current_data = game_data.copy()
+    current_data.update(changes)
+
+    keyboard = [
+        [InlineKeyboardButton("📅 Дата", callback_data="edit_field_date")],
+        [InlineKeyboardButton("⏰ Час", callback_data="edit_field_time")],
+        [InlineKeyboardButton("🏆 Суперник", callback_data="edit_field_opponent")],
+        [InlineKeyboardButton("📍 Місце", callback_data="edit_field_location")],
+        [InlineKeyboardButton("⏰ Час прибуття", callback_data="edit_field_arrival")],
+        [InlineKeyboardButton("👥 Команда", callback_data="edit_field_team")],
+        [InlineKeyboardButton("✅ Зберегти зміни", callback_data="edit_save_changes")],
+        [InlineKeyboardButton("❌ Скасувати", callback_data="edit_cancel")]
+    ]
+
+    message = f"🎮 Редагування гри:\n\n"
+    message += f"📅 Дата: {current_data.get('date', game_data['date'])}\n"
+    message += f"⏰ Час: {current_data.get('time', game_data['time'])}\n"
+    message += f"🏆 Суперник: {current_data.get('opponent', game_data['opponent'])}\n"
+    message += f"📍 Місце: {current_data.get('location', game_data['location'])}\n"
+    message += f"⏰ Прибуття: {current_data.get('arrival_time', game_data['arrival_time'])}\n"
+
+    team_display = current_data.get('team', game_data['team'])
+    team_text = 'чоловіча' if team_display == 'Male' else 'жіноча' if team_display == 'Female' else 'обидві'
+    message += f"👥 Команда: {team_text}\n\n"
+
+    if changes:
+        message += "🔄 Зміни:\n"
+        for field, value in changes.items():
+            field_names = {
+                "date": "Дата",
+                "time": "Час",
+                "opponent": "Суперник",
+                "location": "Місце",
+                "arrival_time": "Час прибуття",
+                "team": "Команда"
+            }
+            if field == "team":
+                value = 'чоловіча' if value == 'Male' else 'жіноча' if value == 'Female' else 'обидві'
+            message += f"• {field_names.get(field, field)}: {value}\n"
+        message += "\n"
+
+    message += "Оберіть що ще хочете змінити або збережіть:"
+
+    if hasattr(update, 'callback_query') and update.callback_query:
+        await update.callback_query.message.reply_text(message, reply_markup=InlineKeyboardMarkup(keyboard))
+    else:
+        await update.message.reply_text(message, reply_markup=InlineKeyboardMarkup(keyboard))
+
+    return EDIT_GAME_FIELD
+
+
+async def send_game_update_notification(context: ContextTypes.DEFAULT_TYPE, old_game, new_game, changes):
+    users = load_data("users", {})
+
+    type_names = {
+        "friendly": "Товариська гра",
+        "stolichka": "Столична ліга",
+        "universiad": "Універсіада"
+    }
+    type_name = type_names.get(new_game.get('type'), new_game.get('type'))
+
+    message = f"📢 Зміни в грі!\n\n"
+    message += f"🎮 {type_name}\n"
+    message += f"📅 {new_game['date']} о {new_game['time']}\n"
+    message += f"🏆 Проти: {new_game['opponent']}\n\n"
+    message += f"🔄 Що змінилося:\n"
+
+    field_names = {
+        "date": "Дата",
+        "time": "Час",
+        "opponent": "Суперник",
+        "location": "Місце",
+        "arrival_time": "Час прибуття",
+        "team": "Команда"
+    }
+
+    for field, new_value in changes.items():
+        old_value = old_game.get(field, "")
+        if field == "team":
+            old_value = 'чоловіча' if old_value == 'Male' else 'жіноча' if old_value == 'Female' else 'обидві'
+            new_value = 'чоловіча' if new_value == 'Male' else 'жіноча' if new_value == 'Female' else 'обидві'
+
+        message += f"• {field_names.get(field, field)}: {old_value} → {new_value}\n"
+
+    count = 0
+    for uid, user_info in users.items():
+        if new_game.get("team") in [user_info.get("team"), "Both"]:
+            try:
+                await context.bot.send_message(chat_id=int(uid), text=message)
+                count += 1
+            except Exception as e:
+                print(f"❌ Помилка надсилання сповіщення до {uid}: {e}")
+
+    print(f"✅ Сповіщення про зміни в грі надіслано {count} користувачам")
+
+
+def create_edit_game_handler():
+    return ConversationHandler(
+        entry_points=[CommandHandler("edit_game", edit_game)],
+        states={
+            EDIT_GAME_SELECT: [CallbackQueryHandler(handle_edit_game_selection, pattern=r"^edit_game_select_\d+$")],
+            EDIT_GAME_FIELD: [CallbackQueryHandler(handle_edit_game_field, pattern=r"^edit_")],
+            EDIT_GAME_VALUE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_game_value),
+                CallbackQueryHandler(handle_edit_game_value, pattern=r"^edit_value_")
+            ]
+        },
+        fallbacks=[CommandHandler("cancel", cancel_game_creation)],
+        allow_reentry=True
+    )
+
+
 async def cancel_close_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("❌ Закриття гри скасовано.")
     return ConversationHandler.END
@@ -834,6 +1139,8 @@ def setup_game_handlers(app):
     app.add_handler(CommandHandler("delete_game", delete_game))
     # Admin: /close_game
     app.add_handler(create_close_game_handler())
+    # Admin: /edit_game
+    app.add_handler(create_edit_game_handler())
 
     # Callback handlers
     app.add_handler(CallbackQueryHandler(handle_list_games, pattern=r"^list_games_"))
