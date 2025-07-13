@@ -1,10 +1,13 @@
 import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes, CallbackQueryHandler, CommandHandler, MessageHandler, filters
+from telegram.ext import ContextTypes, CallbackQueryHandler, CommandHandler, MessageHandler, filters, \
+    ConversationHandler
 from data import load_data
 from validation import ADMIN_IDS
 
 SEND_MESSAGE_STATE = {}
+
+GAME_RESULTS_TEAM, GAME_RESULTS_TYPE = range(500, 502)
 
 
 async def send_message_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -383,33 +386,66 @@ async def my_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(message, parse_mode='markdown')
 
 
-async def game_results(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def game_results(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     keyboard = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("Чоловіча команда", callback_data="game_results_Male"),
-            InlineKeyboardButton("Жіноча команда", callback_data="game_results_Female")
+            InlineKeyboardButton("Чоловіча команда", callback_data="game_results_team_Male"),
+            InlineKeyboardButton("Жіноча команда", callback_data="game_results_team_Female")
         ]
     ])
 
     await update.message.reply_text(
-        "🏆 Результати ігор\n\nОберіть команду для перегляду:",
+        "🏆 Результати ігор\n\nОберіть команду:",
         reply_markup=keyboard
     )
 
+    return GAME_RESULTS_TEAM
 
-async def handle_game_results_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_game_results_team_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
 
-    team_filter = query.data.replace("game_results_", "")
-    games = load_data("games", {})
+    team_filter = query.data.replace("game_results_team_", "")
+    context.user_data["selected_team"] = team_filter
 
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("Товариські матчі", callback_data="game_results_type_friendly"),
+            InlineKeyboardButton("Столична ліга", callback_data="game_results_type_stolichka")
+        ],
+        [
+            InlineKeyboardButton("Універсіада", callback_data="game_results_type_universiad"),
+            InlineKeyboardButton("Всі матчі", callback_data="game_results_type_all")
+        ]
+    ])
+
+    team_name = "чоловічої" if team_filter == "Male" else "жіночої"
+    await query.edit_message_text(
+        f"🏆 Результати ігор {team_name} команди\n\nОберіть тип турніру:",
+        reply_markup=keyboard
+    )
+
+    return GAME_RESULTS_TYPE
+
+
+async def handle_game_results_type_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    team_filter = context.user_data.get("selected_team")
+    type_filter = query.data.replace("game_results_type_", "")
+
+    games = load_data("games", {})
     now = datetime.datetime.now()
 
     completed_games = []
     for game_id, game in games.items():
         if game.get("team") not in [team_filter, "Both"]:
             continue
+
+        if type_filter != "all" and game.get("type") != type_filter:
+            continue
+
         try:
             game_datetime = datetime.datetime.strptime(f"{game['date']} {game['time']}", "%d.%m.%Y %H:%M")
             result = game.get("result", {})
@@ -420,16 +456,26 @@ async def handle_game_results_selection(update: Update, context: ContextTypes.DE
 
     completed_games.sort(key=lambda x: x[2], reverse=True)
 
-    if not completed_games:
-        team_name = "чоловічої" if team_filter == "Male" else "жіночої"
-        await query.edit_message_text(
-            f"🏆 Результати ігор {team_name} команди:\n\nПоки що немає завершених ігор з результатами.")
-        return
-
     team_name = "чоловічої" if team_filter == "Male" else "жіночої"
-    message = f"🏆 Результати ігор {team_name} команди:\n\n"
 
     type_names = {
+        "friendly": "товариських матчів",
+        "stolichka": "Столичної ліги",
+        "universiad": "Універсіади",
+        "all": "всіх матчів"
+    }
+    type_name = type_names.get(type_filter, "матчів")
+
+    if not completed_games:
+        await query.edit_message_text(
+            f"🏆 Результати {type_name} {team_name} команди:\n\n"
+            f"Поки що немає завершених ігор з результатами."
+        )
+        return ConversationHandler.END
+
+    message = f"🏆 Результати {type_name} {team_name} команди:\n\n"
+
+    game_type_names = {
         "friendly": "Товариська",
         "stolichka": "Столичка",
         "universiad": "Універсіада"
@@ -437,7 +483,7 @@ async def handle_game_results_selection(update: Update, context: ContextTypes.DE
 
     for game_id, game, game_datetime in completed_games:
         result = game["result"]
-        type_name = type_names.get(game["type"], game["type"])
+        type_name_short = game_type_names.get(game["type"], game["type"])
 
         if result["status"] == "win":
             result_emoji = "🟢"
@@ -446,8 +492,8 @@ async def handle_game_results_selection(update: Update, context: ContextTypes.DE
         else:
             result_emoji = "🟡"
 
-        message += f"{result_emoji} {type_name} - {game['date']}\n"
-        message += f"   Проти: {game['opponent']}\n"
+        message += f"{result_emoji} {type_name_short} - {game['date']}\n"
+        message += f"   Проти: **{game['opponent']}**\n"
         message += f"   Рахунок: {result['our_score']}:{result['opponent_score']}\n"
 
         if result.get("sets"):
@@ -455,7 +501,7 @@ async def handle_game_results_selection(update: Update, context: ContextTypes.DE
             message += f"   Сети: {sets_text}\n"
 
         if game.get("mvp"):
-            message += f"   MVP: {game['mvp']}\n"
+            message += f"   🏆 MVP: {game['mvp']}\n"
 
         message += "\n"
 
@@ -467,10 +513,25 @@ async def handle_game_results_selection(update: Update, context: ContextTypes.DE
     if len(message) > 4000:
         parts = [message[i:i + 4000] for i in range(0, len(message), 4000)]
         for part in parts:
-            await query.message.reply_text(part)
+            await query.message.reply_text(part, parse_mode='Markdown')
         await query.delete_message()
     else:
-        await query.edit_message_text(message)
+        await query.edit_message_text(message, parse_mode='Markdown')
+
+    return ConversationHandler.END
+
+
+def create_game_results_handler():
+    return ConversationHandler(
+        entry_points=[CommandHandler("game_results", game_results)],
+        states={
+            GAME_RESULTS_TEAM: [
+                CallbackQueryHandler(handle_game_results_team_selection, pattern=r"^game_results_team_")],
+            GAME_RESULTS_TYPE: [
+                CallbackQueryHandler(handle_game_results_type_selection, pattern=r"^game_results_type_")]
+        },
+        fallbacks=[]
+    )
 
 
 def setup_admin_handlers(app):
@@ -483,9 +544,9 @@ def setup_admin_handlers(app):
     # /game_stats
     app.add_handler(CommandHandler("game_stats", game_stats))
     # /game_results
-    app.add_handler(CommandHandler("game_results", game_results))
-    # Buttons
-    app.add_handler(CallbackQueryHandler(handle_game_results_selection, pattern=r"^game_results_"))
+    app.add_handler(create_game_results_handler())
+
+    # Others
     app.add_handler(CallbackQueryHandler(handle_training_stats_selection, pattern=r"^training_stats_"))
     app.add_handler(CallbackQueryHandler(handle_game_stats_selection, pattern=r"^game_stats_"))
     app.add_handler(CallbackQueryHandler(handle_mvp_stats_selection, pattern=r"^mvp_stats_"))
