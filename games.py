@@ -9,10 +9,11 @@ from validation import is_authorized
 
 GAME_TYPE, GAME_TEAM, GAME_DATE, GAME_TIME, GAME_OPPONENT, GAME_LOCATION, GAME_ARRIVAL = range(300, 307)
 EDIT_GAME_SELECT, EDIT_GAME_FIELD, EDIT_GAME_VALUE = range(320, 323)
-CLOSE_GAME_SELECT, CLOSE_GAME_RESULTS, CLOSE_GAME_MVP = range(400, 403)
+CLOSE_GAME_SELECT, CLOSE_GAME_RESULTS, CLOSE_GAME_MVP, CLOSE_GAME_PAYMENT = range(400, 404)
 
 GAMES_FILE = "games"
 GAME_VOTES_FILE = "game_votes"
+CARD_NUMBER = "5457 0825 2151 6794"
 
 
 class GameType(Enum):
@@ -819,29 +820,165 @@ async def handle_close_game_mvp(update: Update, context: ContextTypes.DEFAULT_TY
                     save_data(users, "users")
                 break
 
+    context.user_data["selected_mvp"] = mvp_name
+
+    status_emoji = "🟢" if game_results["status"] == "win" else "🔴" if game_results["status"] == "loss" else "🟡"
+
+    await query.edit_message_text(
+        f"✅ Результат та MVP збережено!\n\n"
+        f"{status_emoji} Рахунок: {game_results['our_score']}:{game_results['opponent_score']}\n"
+        f"🏆 MVP: {mvp_name if mvp_name else 'Не призначено'}\n\n"
+        f"💰 Введіть суму для оплати за гру (в гривнях):\n"
+        f"Наприклад: 200\n"
+        f"Або 0 якщо гра безкоштовна"
+    )
+
+    return CLOSE_GAME_PAYMENT
+
+
+async def handle_close_game_payment(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    try:
+        amount = int(update.message.text.strip())
+        if amount < 0:
+            await update.message.reply_text("⚠️ Сума не може бути від'ємною. Спробуйте ще раз:")
+            return CLOSE_GAME_PAYMENT
+    except ValueError:
+        await update.message.reply_text("⚠️ Будь ласка, введіть число. Спробуйте ще раз:")
+        return CLOSE_GAME_PAYMENT
+
+    game_id = context.user_data["selected_game_id"]
+    game_results = context.user_data["game_results"]
+    mvp_name = context.user_data.get("selected_mvp")
+    game = context.user_data["selected_game"]
+
     games = load_data(GAMES_FILE, {})
     if game_id in games:
         games[game_id]["result"] = game_results
         games[game_id]["mvp"] = mvp_name
         save_data(games, GAMES_FILE)
 
-    game = context.user_data["selected_game"]
-    status_emoji = "🟢" if game_results["status"] == "win" else "🔴" if game_results["status"] == "loss" else "🟡"
-    status_text = "Перемога" if game_results["status"] == "win" else "Поразка" if game_results[
-                                                                                      "status"] == "loss" else "Нічия"
+    if amount > 0:
+        game_votes = load_data(GAME_VOTES_FILE, {"votes": {}})
+        game_voters = game_votes.get("votes", {}).get(game_id, {})
 
-    sets_text = ', '.join([f"{s['our']}:{s['opponent']}" for s in game_results['sets']])
+        yes_voters = [uid for uid, vote_info in game_voters.items() if vote_info.get("vote") == "yes"]
 
-    message = f"✅ Гру успішно закрито!\n\n"
-    message += f"{status_emoji} {status_text}: {game_results['our_score']}:{game_results['opponent_score']}\n"
-    message += f"📅 {game['date']} проти {game['opponent']}\n"
-    message += f"Сети: {sets_text}\n"
+        if yes_voters:
+            per_person = round(amount / len(yes_voters))
 
-    if mvp_name:
-        message += f"🏆 MVP: {mvp_name}"
+            payments = load_data("payments", {})
 
-    await query.edit_message_text(message)
+            for uid in yes_voters:
+                payment_key = f"game_{game_id}_{uid}"
+                payments[payment_key] = {
+                    "user_id": uid,
+                    "game_id": game_id,
+                    "amount": per_person,
+                    "total_game_cost": amount,
+                    "game_info": f"{game['date']} проти {game['opponent']}",
+                    "card": f"*{CARD_NUMBER}*",
+                    "paid": False
+                }
+
+            save_data(payments, "payments")
+
+            await send_game_payment_notifications(context, game, yes_voters, per_person, amount, game_id)
+
+            status_emoji = "🟢" if game_results["status"] == "win" else "🔴" if game_results["status"] == "loss" else "🟡"
+            status_text = "Перемога" if game_results["status"] == "win" else "Поразка" if game_results[
+                                                                                              "status"] == "loss" else "Нічия"
+
+            message = f"✅ Гру успішно закрито!\n\n"
+            message += f"{status_emoji} {status_text}: {game_results['our_score']}:{game_results['opponent_score']}\n"
+            message += f"📅 {game['date']} проти {game['opponent']}\n"
+
+            if mvp_name:
+                message += f"🏆 MVP: {mvp_name}\n"
+
+            message += f"\n💰 Оплата:\n"
+            message += f"💵 Загальна сума: {amount} грн\n"
+            message += f"👥 Учасників: {len(yes_voters)}\n"
+            message += f"💳 По {per_person} грн з особи\n"
+            message += f"📤 Повідомлення надіслано учасникам"
+
+        else:
+            message = f"✅ Гру закрито, але ніхто не проголосував 'так', тому платежі не створено."
+
+    else:
+        status_emoji = "🟢" if game_results["status"] == "win" else "🔴" if game_results["status"] == "loss" else "🟡"
+        status_text = "Перемога" if game_results["status"] == "win" else "Поразка" if game_results[
+                                                                                          "status"] == "loss" else "Нічия"
+
+        message = f"✅ Гру успішно закрито!\n\n"
+        message += f"{status_emoji} {status_text}: {game_results['our_score']}:{game_results['opponent_score']}\n"
+        message += f"📅 {game['date']} проти {game['opponent']}\n"
+
+        if mvp_name:
+            message += f"🏆 MVP: {mvp_name}\n"
+
+        message += f"\n🆓 Гра була безкоштовною"
+
+    await update.message.reply_text(message)
     return ConversationHandler.END
+
+
+async def send_game_payment_notifications(context: ContextTypes.DEFAULT_TYPE, game, yes_voters, per_person,
+                                          total_amount, game_id):
+    type_names = {
+        "friendly": "Товариська гра",
+        "stolichka": "Столична ліга",
+        "universiad": "Універсіада"
+    }
+    type_name = type_names.get(game.get('type'), game.get('type', 'Гра'))
+
+    count = 0
+    for uid in yes_voters:
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Я оплатив(ла)", callback_data=f"paid_yes_game_{game_id}_{uid}")]
+        ])
+
+        message = (
+            f"💳 Ти брав(-ла) участь у грі!\n\n"
+            f"🎮 {type_name}\n"
+            f"📅 {game['date']} проти {game['opponent']}\n"
+            f"💰 Сума до сплати: {per_person} грн\n"
+            f"💳 Карта для оплати: `5457 0825 2151 6794`\n\n"
+            f"Натисни кнопку нижче, коли оплатиш:"
+        )
+
+        try:
+            await context.bot.send_message(
+                chat_id=int(uid),
+                text=message,
+                reply_markup=keyboard,
+                parse_mode='Markdown'
+            )
+            count += 1
+        except Exception as e:
+            print(f"❌ Помилка надсилання повідомлення про оплату до {uid}: {e}")
+
+    return count
+
+
+async def handle_game_payment_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    data_parts = query.data.split("_")
+    game_id = data_parts[3]
+    user_id = data_parts[4]
+
+    payments = load_data("payments", {})
+    payment_key = f"game_{game_id}_{user_id}"
+
+    if payment_key not in payments:
+        await query.edit_message_text("⚠️ Помилка: запис про платіж не знайдено.")
+        return
+
+    payments[payment_key]["paid"] = True
+    save_data(payments, "payments")
+
+    await query.edit_message_text("✅ Дякуємо! Оплату за гру зареєстровано.")
 
 
 async def edit_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1161,7 +1298,8 @@ def create_close_game_handler():
         states={
             CLOSE_GAME_SELECT: [CallbackQueryHandler(handle_close_game_selection, pattern=r"^close_game_\d+$")],
             CLOSE_GAME_RESULTS: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_close_game_results)],
-            CLOSE_GAME_MVP: [CallbackQueryHandler(handle_close_game_mvp, pattern=r"^mvp_")]
+            CLOSE_GAME_MVP: [CallbackQueryHandler(handle_close_game_mvp, pattern=r"^mvp_")],
+            CLOSE_GAME_PAYMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_close_game_payment)]
         },
         fallbacks=[CommandHandler("cancel", cancel_close_game)],
         allow_reentry=True
@@ -1206,3 +1344,4 @@ def setup_game_handlers(app):
     app.add_handler(
         CallbackQueryHandler(handle_delete_game_confirmation, pattern=r"^delete_game_(confirm_\d+|cancel)$"))
     app.add_handler(CallbackQueryHandler(handle_game_vote, pattern=r"^game_vote_(yes|no)_"))
+    app.add_handler(CallbackQueryHandler(handle_game_payment_confirmation, pattern=r"^paid_yes_game_"))
