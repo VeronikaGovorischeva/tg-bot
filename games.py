@@ -9,7 +9,8 @@ from validation import is_authorized
 
 GAME_TYPE, GAME_TEAM, GAME_DATE, GAME_TIME, GAME_OPPONENT, GAME_LOCATION, GAME_ARRIVAL = range(300, 307)
 EDIT_GAME_SELECT, EDIT_GAME_FIELD, EDIT_GAME_VALUE = range(320, 323)
-CLOSE_GAME_SELECT, CLOSE_GAME_RESULTS, CLOSE_GAME_MVP = range(400, 403)
+CLOSE_GAME_SELECT, CLOSE_GAME_RESULTS, CLOSE_GAME_MVP, CLOSE_GAME_AMOUNT = range(400, 404)
+CARD_NUMBER = "5457 0825 2151 6794"
 
 GAMES_FILE = "games"
 GAME_VOTES_FILE = "game_votes"
@@ -825,11 +826,54 @@ async def handle_close_game_mvp(update: Update, context: ContextTypes.DEFAULT_TY
         games[game_id]["mvp"] = mvp_name
         save_data(games, GAMES_FILE)
 
+    context.user_data["final_mvp"] = mvp_name
+
     game = context.user_data["selected_game"]
+    type_names = {
+        "friendly": "Товариська",
+        "stolichka": "Столичка",
+        "universiad": "Універсіада"
+    }
+    type_name = type_names.get(game.get('type'), game.get('type'))
+
+    await query.edit_message_text(
+        f"Введіть суму оплати за гру (в гривнях):\n\n"
+        f"🏆 {type_name}\n"
+        f"📅 {game['date']} проти {game['opponent']}\n\n"
+        f"Введіть:\n"
+        f"• 0 - якщо гра безкоштовна\n"
+        f"• Суму (наприклад: 150)"
+    )
+
+    return CLOSE_GAME_AMOUNT
+
+
+async def handle_game_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    try:
+        amount = int(update.message.text.strip())
+        if amount < 0:
+            await update.message.reply_text("⚠️ Сума не може бути від'ємною. Спробуйте ще раз:")
+            return CLOSE_GAME_AMOUNT
+    except ValueError:
+        await update.message.reply_text("⚠️ Будь ласка, введіть число. Спробуйте ще раз:")
+        return CLOSE_GAME_AMOUNT
+
+    return await finalize_game_closure(update, context, amount if amount > 0 else None)
+
+
+async def finalize_game_closure(update, context, amount):
+    game_id = context.user_data["selected_game_id"]
+    game = context.user_data["selected_game"]
+    game_results = context.user_data["game_results"]
+    mvp_name = context.user_data.get("final_mvp")
+    await update_game_attendance_stats(game_id, game)
+
+    if amount:
+        await process_game_payments(context, game_id, game, amount)
+
     status_emoji = "🟢" if game_results["status"] == "win" else "🔴" if game_results["status"] == "loss" else "🟡"
     status_text = "Перемога" if game_results["status"] == "win" else "Поразка" if game_results[
                                                                                       "status"] == "loss" else "Нічия"
-
     sets_text = ', '.join([f"{s['our']}:{s['opponent']}" for s in game_results['sets']])
 
     message = f"✅ Гру успішно закрито!\n\n"
@@ -838,10 +882,143 @@ async def handle_close_game_mvp(update: Update, context: ContextTypes.DEFAULT_TY
     message += f"Сети: {sets_text}\n"
 
     if mvp_name:
-        message += f"🏆 MVP: {mvp_name}"
+        message += f"🏆 MVP: {mvp_name}\n"
 
-    await query.edit_message_text(message)
+    if amount:
+        message += f"💰 Оплата: {amount} грн з особи\n"
+        message += f"💳 Повідомлення про оплату надіслано учасникам"
+    else:
+        message += f"🆓 Гра безкоштовна"
+
+    await update.message.reply_text(message)
     return ConversationHandler.END
+
+
+async def process_game_payments(context, game_id, game, amount):
+    game_votes = load_data(GAME_VOTES_FILE, {"votes": {}})
+    votes = game_votes.get("votes", {}).get(game_id, {})
+
+    payers = [uid for uid, vote_info in votes.items() if vote_info.get("vote") == "yes"]
+
+    if not payers:
+        print(f"⚠️ Немає учасників для оплати гри {game_id}")
+        return
+
+    payments = load_data("payments", {})
+
+    type_names = {
+        "friendly": "Товариська гра",
+        "stolichka": "Столична ліга",
+        "universiad": "Універсіада"
+    }
+    game_type = type_names.get(game.get('type'), game.get('type'))
+
+    for uid in payers:
+        payment_key = f"game_{game_id}_{uid}"
+        payments[payment_key] = {
+            "user_id": uid,
+            "training_id": f"game_{game_id}",
+            "game_id": game_id,
+            "amount": amount,
+            "total_training_cost": amount,
+            "training_datetime": f"{game_type} - {game['date']} проти {game['opponent']}",
+            "card": CARD_NUMBER,
+            "paid": False
+        }
+
+        keyboard = [[InlineKeyboardButton("✅ Я оплатив(ла)",
+                                          callback_data=f"paid_yes_game_{game_id}_{uid}")]]
+
+        try:
+            await context.bot.send_message(
+                chat_id=int(uid),
+                text=(f"💳 Ти брав(-ла) участь у грі:\n\n"
+                      f"🏆 {game_type}\n"
+                      f"📅 {game['date']} проти {game['opponent']}\n"
+                      f"💰 Сума до сплати: {amount} грн\n"
+                      f"💳 Карта для оплати: `{CARD_NUMBER}`\n\n"
+                      f"Натисни кнопку нижче, коли оплатиш:"),
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            print(f"❌ Помилка надсилання платежу {uid}: {e}")
+
+    save_data(payments, "payments")
+
+
+async def update_game_attendance_stats(game_id, game):
+    game_votes = load_data(GAME_VOTES_FILE, {"votes": {}})
+    votes = game_votes.get("votes", {}).get(game_id, {})
+
+    users = load_data("users", {})
+    updated_count = 0
+
+    for uid, vote_info in votes.items():
+        if uid not in users:
+            continue
+
+        user_data = users[uid]
+        user_team = user_data.get("team")
+
+        if game.get("team") not in [user_team, "Both"]:
+            continue
+
+        if "game_attendance" not in user_data:
+            user_data["game_attendance"] = {"attended": 0, "total": 0}
+
+        game_attendance = user_data["game_attendance"]
+
+        if vote_info.get("vote") == "yes":
+            game_attendance["attended"] += 1
+
+        game_attendance["total"] += 1
+        updated_count += 1
+
+    save_data(users, "users")
+
+
+async def handle_game_payment_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    parts = query.data.split("_")
+    if len(parts) < 4:
+        await query.edit_message_text("⚠️ Помилка: неправильний формат даних.")
+        return
+
+    game_prefix_end = query.data.rfind("_")
+    user_id = query.data[game_prefix_end + 1:]
+    game_id = query.data[len("paid_yes_game_"):-len(f"_{user_id}")]
+
+    payments = load_data("payments", {})
+    payment_key = f"game_{game_id}_{user_id}"
+
+    if payment_key not in payments:
+        await query.edit_message_text(
+            "⚠️ Помилка: запис про платіж не знайдено.\n"
+            "Можливо, використай команду /pay_debt для підтвердження."
+        )
+        return
+
+    payments[payment_key]["paid"] = True
+    save_data(payments, "payments")
+
+    await query.edit_message_text("✅ Дякуємо! Оплату зареєстровано.")
+
+    training_id = f"game_{game_id}"
+    all_paid = all(p["paid"] for p in payments.values() if p.get("training_id") == training_id)
+
+    if all_paid:
+        from validation import ADMIN_IDS
+        for admin in ADMIN_IDS:
+            try:
+                await context.bot.send_message(
+                    chat_id=admin,
+                    text=f"✅ Всі учасники гри {game_id} оплатили."
+                )
+            except Exception as e:
+                print(f"❌ Не вдалося надіслати повідомлення адміну {admin}: {e}")
 
 
 async def edit_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1161,7 +1338,8 @@ def create_close_game_handler():
         states={
             CLOSE_GAME_SELECT: [CallbackQueryHandler(handle_close_game_selection, pattern=r"^close_game_\d+$")],
             CLOSE_GAME_RESULTS: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_close_game_results)],
-            CLOSE_GAME_MVP: [CallbackQueryHandler(handle_close_game_mvp, pattern=r"^mvp_")]
+            CLOSE_GAME_MVP: [CallbackQueryHandler(handle_close_game_mvp, pattern=r"^mvp_")],
+            CLOSE_GAME_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_game_amount)]
         },
         fallbacks=[CommandHandler("cancel", cancel_close_game)],
         allow_reentry=True
