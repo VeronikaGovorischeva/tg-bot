@@ -730,24 +730,93 @@ async def close_vote(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⛔ У вас немає прав для закриття голосувань.")
         return
 
-    if not context.args:
-        await update.message.reply_text(
-            "Використання: /close_vote [ID_голосування]\n"
-            "Щоб побачити активні голосування, використайте /view_votes"
-        )
+    general_votes = load_data(GENERAL_FILE, {})
+
+    active_votes = []
+    for vote_id, vote_data in general_votes.items():
+        if vote_data.get("is_active", True):
+            active_votes.append((vote_id, vote_data))
+
+    if not active_votes:
+        await update.message.reply_text("Немає активних голосувань для закриття.")
         return
 
-    vote_id = context.args[0]
-    votes = load_data(GENERAL_FILE, {})
+    context.user_data["close_vote_options"] = active_votes
 
-    if vote_id not in votes:
-        await update.message.reply_text("⚠️ Голосування з таким ID не знайдено.")
+    keyboard = []
+    for i, (vote_id, vote_data) in enumerate(active_votes):
+        team = vote_data.get("team", "Both")
+        team_text = ""
+        if team == "Male":
+            team_text = " (чоловіча)"
+        elif team == "Female":
+            team_text = " (жіноча)"
+
+        label = f"{vote_data['question'][:50]}{'...' if len(vote_data['question']) > 50 else ''}{team_text}"
+        keyboard.append([InlineKeyboardButton(label, callback_data=f"close_vote_select_{i}")])
+
+    await update.message.reply_text(
+        "Оберіть голосування для закриття:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+async def handle_close_vote_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    idx = int(query.data.replace("close_vote_select_", ""))
+    options = context.user_data.get("close_vote_options", [])
+
+    if idx >= len(options):
+        await query.edit_message_text("⚠️ Помилка: голосування не знайдено.")
         return
 
-    votes[vote_id]["is_active"] = False
-    save_data(votes, GENERAL_FILE)
+    vote_id, vote_data = options[idx]
 
-    await update.message.reply_text(f"✅ Голосування {vote_id} закрито.")
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Так, закрити", callback_data=f"close_vote_confirm_{idx}"),
+            InlineKeyboardButton("❌ Скасувати", callback_data="close_vote_cancel")
+        ]
+    ])
+
+    team_names = {"Male": "чоловічої команди", "Female": "жіночої команди", "Both": "обох команд"}
+    team_text = team_names.get(vote_data.get("team", "Both"), "")
+
+    message = f"Ви впевнені, що хочете закрити голосування?\n\n"
+    message += f"📊 {vote_data['question']}\n"
+    message += f"👥 Для: {team_text}\n"
+
+    await query.edit_message_text(message, reply_markup=keyboard)
+
+
+async def handle_close_vote_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "close_vote_cancel":
+        await query.edit_message_text("❌ Закриття голосування скасовано.")
+        return
+
+    idx = int(query.data.replace("close_vote_confirm_", ""))
+    options = context.user_data.get("close_vote_options", [])
+
+    if idx >= len(options):
+        await query.edit_message_text("⚠️ Помилка: голосування не знайдено.")
+        return
+
+    vote_id, vote_data = options[idx]
+    general_votes = load_data(GENERAL_FILE, {})
+
+    if vote_id not in general_votes:
+        await query.edit_message_text("⚠️ Голосування не знайдено.")
+        return
+
+    general_votes[vote_id]["is_active"] = False
+    save_data(general_votes, GENERAL_FILE)
+
+    await query.edit_message_text(f"✅ Голосування закрито:\n\n📊 {vote_data['question']}")
 
 
 async def cancel_vote_creation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1689,3 +1758,5 @@ def setup_voting_handlers(app):
     app.add_handler(CallbackQueryHandler(handle_general_vote_response, pattern=r"^general_vote_"))
     app.add_handler(CallbackQueryHandler(handle_unlock_selection, pattern=r"^unlock_training_\d+"))
     app.add_handler(CallbackQueryHandler(handle_vote_notify_selection, pattern=r"^notify_vote_\d+$"))
+    app.add_handler(CallbackQueryHandler(handle_close_vote_selection, pattern=r"^close_vote_select_\d+$"))
+    app.add_handler(CallbackQueryHandler(handle_close_vote_confirmation, pattern=r"^close_vote_(confirm_\d+|cancel)$"))

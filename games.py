@@ -418,37 +418,76 @@ async def delete_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⛔ У вас немає прав для видалення ігор.")
         return
 
-    if not context.args:
-        await update.message.reply_text(
-            "Використання: /delete_game [ID_гри]\n"
-            "Щоб побачити ID ігор, використайте /list_games"
-        )
-        return
-
-    game_id = context.args[0]
     games = load_data(GAMES_FILE, {})
+    now = datetime.datetime.now()
 
-    if game_id not in games:
-        await update.message.reply_text(f"⚠️ Гру з ID {game_id} не знайдено.")
+    available_games = []
+    for game_id, game in games.items():
+        try:
+            game_datetime = datetime.datetime.strptime(f"{game['date']} {game['time']}", "%d.%m.%Y %H:%M")
+            if game_datetime >= now:
+                available_games.append((game_id, game))
+        except ValueError:
+            available_games.append((game_id, game))
+
+    if not available_games:
+        await update.message.reply_text("Немає ігор для видалення.")
         return
 
-    game = games[game_id]
+    context.user_data["delete_game_options"] = available_games
+
+    keyboard = []
+    for i, (game_id, game) in enumerate(available_games):
+        type_names = {
+            "friendly": "Товариська",
+            "stolichka": "Столичка",
+            "universiad": "Універсіада"
+        }
+        type_name = type_names.get(game.get('type'), game.get('type'))
+        team_name = "чоловіча" if game['team'] == "Male" else "жіноча" if game['team'] == "Female" else "змішана"
+
+        label = f"{type_name} ({team_name}) - {game['date']} проти {game['opponent']}"
+        keyboard.append([InlineKeyboardButton(label, callback_data=f"delete_game_select_{i}")])
+
+    await update.message.reply_text(
+        "Оберіть гру для видалення:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+async def handle_delete_game_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    idx = int(query.data.replace("delete_game_select_", ""))
+    options = context.user_data.get("delete_game_options", [])
+
+    if idx >= len(options):
+        await query.edit_message_text("⚠️ Помилка: гру не знайдено.")
+        return
+
+    game_id, game = options[idx]
 
     keyboard = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("✅ Так, видалити", callback_data=f"delete_game_confirm_{game_id}"),
+            InlineKeyboardButton("✅ Так, видалити", callback_data=f"delete_game_confirm_{idx}"),
             InlineKeyboardButton("❌ Скасувати", callback_data="delete_game_cancel")
         ]
     ])
 
-    type_name = game_manager.game_types.get(GameType(game['type']), game['type'])
+    type_names = {
+        "friendly": "Товариська",
+        "stolichka": "Столичка",
+        "universiad": "Універсіада"
+    }
+    type_name = type_names.get(game.get('type'), game.get('type'))
+
     message = f"Ви впевнені, що хочете видалити гру?\n\n"
     message += f"🎮 {type_name}\n"
     message += f"📅 {game['date']} о {game['time']}\n"
     message += f"🏆 Проти: {game['opponent']}\n"
-    message += f"🆔 ID: {game_id}"
 
-    await update.message.reply_text(message, reply_markup=keyboard)
+    await query.edit_message_text(message, reply_markup=keyboard)
 
 
 async def handle_delete_game_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -459,18 +498,36 @@ async def handle_delete_game_confirmation(update: Update, context: ContextTypes.
         await query.edit_message_text("❌ Видалення гри скасовано.")
         return
 
-    game_id = query.data.replace("delete_game_confirm_", "")
+    idx = int(query.data.replace("delete_game_confirm_", ""))
+    options = context.user_data.get("delete_game_options", [])
+
+    if idx >= len(options):
+        await query.edit_message_text("⚠️ Помилка: гру не знайдено.")
+        return
+
+    game_id, game = options[idx]
     games = load_data(GAMES_FILE, {})
 
     if game_id not in games:
         await query.edit_message_text("⚠️ Гру не знайдено.")
         return
 
-    game = games[game_id]
     del games[game_id]
     save_data(games, GAMES_FILE)
 
-    type_name = game_manager.game_types.get(GameType(game['type']), game['type'])
+    game_votes = load_data(GAME_VOTES_FILE, {"votes": {}})
+    if game_id in game_votes["votes"]:
+        del game_votes["votes"][game_id]
+        save_data(game_votes, GAME_VOTES_FILE)
+        print(f"✅ Видалено голосування за гру {game_id}")
+
+    type_names = {
+        "friendly": "Товариська",
+        "stolichka": "Столичка",
+        "universiad": "Універсіада"
+    }
+    type_name = type_names.get(game.get('type'), game.get('type'))
+
     await query.edit_message_text(
         f"✅ Гру видалено:\n\n"
         f"🎮 {type_name}\n"
@@ -949,6 +1006,7 @@ async def handle_edit_game_value(update: Update, context: ContextTypes.DEFAULT_T
         if field == "date":
             try:
                 datetime.datetime.strptime(new_value, "%d.%m.%Y")
+                context.user_data["edit_changes"][field] = new_value
             except ValueError:
                 await update.message.reply_text("⚠️ Неправильний формат дати. Використовуйте ДД.ММ.РРРР")
                 return EDIT_GAME_VALUE
@@ -1144,5 +1202,7 @@ def setup_game_handlers(app):
 
     # Callback handlers
     app.add_handler(CallbackQueryHandler(handle_list_games, pattern=r"^list_games_"))
-    app.add_handler(CallbackQueryHandler(handle_delete_game_confirmation, pattern=r"^delete_game_"))
+    app.add_handler(CallbackQueryHandler(handle_delete_game_selection, pattern=r"^delete_game_select_\d+$"))
+    app.add_handler(
+        CallbackQueryHandler(handle_delete_game_confirmation, pattern=r"^delete_game_(confirm_\d+|cancel)$"))
     app.add_handler(CallbackQueryHandler(handle_game_vote, pattern=r"^game_vote_(yes|no)_"))
