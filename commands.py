@@ -7,7 +7,7 @@ from validation import ADMIN_IDS
 
 SEND_MESSAGE_STATE = {}
 
-GAME_RESULTS_TEAM, GAME_RESULTS_TYPE = range(500, 502)
+GAME_RESULTS_TEAM, GAME_RESULTS_SEASON, GAME_RESULTS_TYPE = range(500, 503)
 
 
 async def send_message_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -386,6 +386,66 @@ async def my_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(message, parse_mode='markdown')
 
 
+def get_available_seasons_from_ids(games_data, team_filter):
+    seasons = set()
+
+    for game_id, game in games_data.items():
+        if game.get("team") not in [team_filter, "Both"]:
+            continue
+        try:
+            parts = game_id.split("_")
+            if len(parts) >= 4:
+                for i in range(len(parts) - 1):
+                    if (parts[i].isdigit() and parts[i + 1].isdigit() and
+                            len(parts[i]) == 4 and len(parts[i + 1]) == 4):
+                        season = f"{parts[i]}_{parts[i + 1]}"
+                        seasons.add(season)
+                        break
+        except:
+            continue
+
+    return sorted(seasons, reverse=True)
+
+
+async def show_tournament_selection(query, context, team_name):
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("Товариські матчі", callback_data="game_results_type_friendly"),
+            InlineKeyboardButton("Столична ліга", callback_data="game_results_type_stolichka")
+        ],
+        [
+            InlineKeyboardButton("Універсіада", callback_data="game_results_type_universiad"),
+            InlineKeyboardButton("Всі матчі", callback_data="game_results_type_all")
+        ]
+    ])
+
+    season_text = ""
+    selected_season = context.user_data.get("selected_season")
+    if selected_season:
+        season_start, season_end = selected_season.split("_")
+        season_text = f" сезону {season_start}/{season_end}"
+
+    await query.edit_message_text(
+        f"🏆 Результати ігор {team_name} команди{season_text}\n\nОберіть тип турніру:",
+        reply_markup=keyboard
+    )
+
+    return GAME_RESULTS_TYPE
+
+
+def filter_games_by_season_id(games, season_filter):
+    if not season_filter:
+        return games
+
+    filtered_games = []
+
+    for game_id, game, game_datetime in games:
+        if season_filter in game_id:
+            filtered_games.append((game_id, game, game_datetime))
+
+    return filtered_games
+
+
 async def game_results(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     keyboard = InlineKeyboardMarkup([
         [
@@ -401,6 +461,7 @@ async def game_results(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
     return GAME_RESULTS_TEAM
 
+
 async def handle_game_results_team_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
@@ -408,24 +469,45 @@ async def handle_game_results_team_selection(update: Update, context: ContextTyp
     team_filter = query.data.replace("game_results_team_", "")
     context.user_data["selected_team"] = team_filter
 
-    keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("Товариські матчі", callback_data="game_results_type_friendly"),
-            InlineKeyboardButton("Столична ліга", callback_data="game_results_type_stolichka")
-        ],
-        [
-            InlineKeyboardButton("Універсіада", callback_data="game_results_type_universiad"),
-            InlineKeyboardButton("Всі матчі", callback_data="game_results_type_all")
-        ]
-    ])
+    games = load_data("games", {})
+    available_seasons = get_available_seasons_from_ids(games, team_filter)
 
     team_name = "чоловічої" if team_filter == "Male" else "жіночої"
+
+    if len(available_seasons) <= 1:
+        if available_seasons:
+            context.user_data["selected_season"] = available_seasons[0]
+        else:
+            context.user_data["selected_season"] = None
+        return await show_tournament_selection(query, context, team_name)
+
+    keyboard = []
+    for season in available_seasons:
+        season_start, season_end = season.split("_")
+        season_label = f"{season_start}/{season_end}"
+        keyboard.append([InlineKeyboardButton(season_label, callback_data=f"game_results_season_{season}")])
+
+    keyboard.append([InlineKeyboardButton("🗓️ Всі сезони", callback_data="game_results_season_all")])
+
     await query.edit_message_text(
-        f"🏆 Результати ігор {team_name} команди\n\nОберіть тип турніру:",
-        reply_markup=keyboard
+        f"🏆 Результати ігор {team_name} команди\n\nОберіть сезон:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-    return GAME_RESULTS_TYPE
+    return GAME_RESULTS_SEASON
+
+
+async def handle_game_results_season_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    season_filter = query.data.replace("game_results_season_", "")
+    context.user_data["selected_season"] = season_filter if season_filter != "all" else None
+
+    team_filter = context.user_data.get("selected_team")
+    team_name = "чоловічої" if team_filter == "Male" else "жіночої"
+
+    return await show_tournament_selection(query, context, team_name)
 
 
 async def handle_game_results_type_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -433,6 +515,7 @@ async def handle_game_results_type_selection(update: Update, context: ContextTyp
     await query.answer()
 
     team_filter = context.user_data.get("selected_team")
+    season_filter = context.user_data.get("selected_season")
     type_filter = query.data.replace("game_results_type_", "")
 
     games = load_data("games", {})
@@ -454,9 +537,17 @@ async def handle_game_results_type_selection(update: Update, context: ContextTyp
         except ValueError:
             continue
 
+    if season_filter:
+        completed_games = filter_games_by_season_id(completed_games, season_filter)
+
     completed_games.sort(key=lambda x: x[2], reverse=True)
 
     team_name = "чоловічої" if team_filter == "Male" else "жіночої"
+
+    season_text = ""
+    if season_filter:
+        season_start, season_end = season_filter.split("_")
+        season_text = f" сезону {season_start}/{season_end}"
 
     type_names = {
         "friendly": "товариських матчів",
@@ -468,12 +559,12 @@ async def handle_game_results_type_selection(update: Update, context: ContextTyp
 
     if not completed_games:
         await query.edit_message_text(
-            f"🏆 Результати {type_name} {team_name} команди:\n\n"
+            f"🏆 Результати {type_name} {team_name} команди{season_text}:\n\n"
             f"Поки що немає завершених ігор з результатами."
         )
         return ConversationHandler.END
 
-    message = f"🏆 Результати {type_name} {team_name} команди:\n\n"
+    message = f"🏆 Результати {type_name} {team_name} команди{season_text}:\n\n"
 
     game_type_names = {
         "friendly": "Товариська",
@@ -507,8 +598,11 @@ async def handle_game_results_type_selection(update: Update, context: ContextTyp
 
     wins = sum(1 for _, game, _ in completed_games if game["result"]["status"] == "win")
     losses = sum(1 for _, game, _ in completed_games if game["result"]["status"] == "loss")
+    draws = sum(1 for _, game, _ in completed_games if game["result"]["status"] == "draw")
 
     message += f"📊 Статистика: {wins} перемог, {losses} поразок"
+    if draws > 0:
+        message += f", {draws} нічиїх"
 
     if len(message) > 4000:
         parts = [message[i:i + 4000] for i in range(0, len(message), 4000)]
@@ -527,6 +621,8 @@ def create_game_results_handler():
         states={
             GAME_RESULTS_TEAM: [
                 CallbackQueryHandler(handle_game_results_team_selection, pattern=r"^game_results_team_")],
+            GAME_RESULTS_SEASON: [
+                CallbackQueryHandler(handle_game_results_season_selection, pattern=r"^game_results_season_")],
             GAME_RESULTS_TYPE: [
                 CallbackQueryHandler(handle_game_results_type_selection, pattern=r"^game_results_type_")]
         },
