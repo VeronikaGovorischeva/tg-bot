@@ -1,6 +1,7 @@
 import datetime
 from typing import Dict, Any
 from data import load_data, save_data
+from validation import is_excluded_from_stats
 
 TRAINING_VOTES_ARCHIVE_FILE = "training_votes_archive"
 TRAINING_VOTES_FILE = "votes"
@@ -106,7 +107,19 @@ class TrainingVotesArchiver:
 
     def _update_user_statistics(self, votes: Dict[str, Any], training_team: str) -> None:
         users_data = load_data(self.users_file, {})
-        updated_count = 0
+
+        for user_id, user_data in users_data.items():
+            if is_excluded_from_stats(user_id):
+                continue
+            user_team = user_data.get("team")
+
+            if not self._should_update_user_stats(user_team, training_team):
+                continue
+
+            if "training_attendance" not in user_data:
+                user_data["training_attendance"] = {"attended": 0, "total": 0}
+
+            user_data["training_attendance"]["total"] += 1
 
         for user_id, vote_info in votes.items():
             if user_id not in users_data:
@@ -118,20 +131,10 @@ class TrainingVotesArchiver:
             if not self._should_update_user_stats(user_team, training_team):
                 continue
 
-            if "training_attendance" not in user_data:
-                user_data["training_attendance"] = {"attended": 0, "total": 0}
-
-            attendance = user_data["training_attendance"]
-
             if vote_info.get("vote") == "yes":
-                attendance["attended"] += 1
-
-            attendance["total"] += 1
-
-            updated_count += 1
+                user_data["training_attendance"]["attended"] += 1
 
         save_data(users_data, self.users_file)
-        print(f"✅ Updated statistics for {updated_count} users")
 
     def _should_update_user_stats(self, user_team: str, training_team: str) -> bool:
         if training_team == "Both":

@@ -156,22 +156,31 @@ async def handle_mvp_stats_selection(update: Update, context: ContextTypes.DEFAU
 
         if male_players:
             message += "Чоловіча команда:\n"
-            for name, count in male_players:
-                message += f"• {name}: {count} MVP\n"
+            current_rank = 1
+            for i, (name, count) in enumerate(male_players):
+                if i > 0 and count != male_players[i - 1][1]:
+                    current_rank = i + 1
+                message += f"{current_rank}. {name}: {count} MVP\n"
             message += "\n"
 
         if female_players:
             message += "Жіноча команда:\n"
-            for name, count in female_players:
-                message += f"• {name}: {count} MVP\n"
+            current_rank = 1
+            for i, (name, count) in enumerate(female_players):
+                if i > 0 and count != female_players[i - 1][1]:
+                    current_rank = i + 1
+                message += f"{current_rank}. {name}: {count} MVP\n"
 
     else:
         team_name = "чоловічої" if team_filter == "Male" else "жіночої"
         message = f"🏆 MVP Статистика {team_name} команди:\n\n"
 
         if mvp_data:
-            for name, team, count in mvp_data:
-                message += f"• {name}: {count} MVP\n"
+            current_rank = 1
+            for i, (name, team, count) in enumerate(mvp_data):
+                if i > 0 and count != mvp_data[i - 1][2]:
+                    current_rank = i + 1
+                message += f"{current_rank}. {name}: {count} MVP\n"
         else:
             message += f"Поки що немає MVP нагород у {team_name} команди."
 
@@ -266,7 +275,11 @@ async def handle_training_stats_selection(update: Update, context: ContextTypes.
             if training_att["total"] > 0:
                 training_data.append((name, team, training_att))
 
-    training_data.sort(key=lambda x: (x[2]["attended"] / x[2]["total"]) if x[2]["total"] > 0 else 0, reverse=True)
+    training_data.sort(key=lambda x: (
+        x[2]["attended"] / x[2]["total"] if x[2]["total"] > 0 else 0,  # percentage
+        x[2]["attended"],  # attended count
+        x[2]["total"]  # total count
+    ), reverse=True)
 
     if team_filter == "Both":
         message = "🏐 Статистика відвідуваності тренувань (всі команди):\n\n"
@@ -275,8 +288,20 @@ async def handle_training_stats_selection(update: Update, context: ContextTypes.
         message = f"🏐 Статистика відвідуваності тренувань {team_name} команди:\n\n"
 
     if training_data:
-        for i, (name, team, training_att) in enumerate(training_data, 1):
-            message += f"{i}. {name}: {training_att['attended']}/{training_att['total']} ({round(training_att['attended'] / training_att['total'] * 100) if training_att['total'] > 0 else 0}%)\n"
+        current_rank = 1
+        for i, (name, team, training_att) in enumerate(training_data):
+            percentage = round(training_att['attended'] / training_att['total'] * 100) if training_att[
+                                                                                              'total'] > 0 else 0
+            if i > 0:
+                prev_att = training_data[i - 1][2]
+                prev_percentage = round(prev_att['attended'] / prev_att['total'] * 100) if prev_att['total'] > 0 else 0
+
+                if (percentage != prev_percentage or
+                        training_att['attended'] != prev_att['attended'] or
+                        training_att['total'] != prev_att['total']):
+                    current_rank = i + 1
+
+            message += f"{current_rank}. {name}: {training_att['attended']}/{training_att['total']} ({percentage}%)\n"
     else:
         message += "Немає даних про відвідуваність тренувань."
 
@@ -316,7 +341,11 @@ async def handle_game_stats_selection(update: Update, context: ContextTypes.DEFA
             if game_att["total"] > 0:
                 game_data.append((name, team, game_att))
 
-    game_data.sort(key=lambda x: (x[2]["attended"] / x[2]["total"]) if x[2]["total"] > 0 else 0, reverse=True)
+    game_data.sort(key=lambda x: (
+        x[2]["attended"] / x[2]["total"] if x[2]["total"] > 0 else 0,
+        x[2]["attended"],
+        x[2]["total"]
+    ), reverse=True)
 
     if team_filter == "Both":
         message = "🏆 Статистика відвідуваності ігор (всі команди):\n\n"
@@ -325,8 +354,19 @@ async def handle_game_stats_selection(update: Update, context: ContextTypes.DEFA
         message = f"🏆 Статистика відвідуваності ігор {team_name} команди:\n\n"
 
     if game_data:
-        for i, (name, team, game_att) in enumerate(game_data, 1):
-            message += f"{i}. {name}: {game_att['attended']}/{game_att['total']} ({round(game_att['attended'] / game_att['total'] * 100) if game_att['total'] > 0 else 0}%)\n"
+        current_rank = 1
+        for i, (name, team, game_att) in enumerate(game_data):
+            percentage = round(game_att['attended'] / game_att['total'] * 100) if game_att['total'] > 0 else 0
+            if i > 0:
+                prev_att = game_data[i - 1][2]
+                prev_percentage = round(prev_att['attended'] / prev_att['total'] * 100) if prev_att['total'] > 0 else 0
+
+                if (percentage != prev_percentage or
+                        game_att['attended'] != prev_att['attended'] or
+                        game_att['total'] != prev_att['total']):
+                    current_rank = i + 1
+
+            message += f"{current_rank}. {name}: {game_att['attended']}/{game_att['total']} ({percentage}%)\n"
     else:
         message += "Немає даних про відвідуваність ігор."
 
