@@ -4,6 +4,7 @@ from telegram.ext import ContextTypes, CallbackQueryHandler, CommandHandler, Mes
     ConversationHandler
 from data import load_data
 from validation import ADMIN_IDS
+import asyncio
 
 SEND_MESSAGE_STATE = {}
 
@@ -34,9 +35,22 @@ async def handle_send_message_team_selection(update: Update, context: ContextTyp
 
 async def handle_send_message_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-    if update.message.text == "🤡" or update.message.text == "🖕":
+    message_text = update.message.text
+    if "🤡" in message_text:
+        await context.bot.send_chat_action(user_id, action='record_voice')
+        await asyncio.sleep(3)
+        await context.bot.send_chat_action(user_id, action='typing')
+        await asyncio.sleep(2)
+        await update.message.reply_text("Ти Клоун")
+        await context.bot.send_chat_action(user_id, action='choose_sticker')
+        await asyncio.sleep(1)
         await update.message.reply_text("🤡")
-        return
+
+    if "🖕" in message_text:
+        await context.bot.send_chat_action(user_id, action='typing')
+        await asyncio.sleep(3)
+        await context.bot.send_dice(user_id, emoji='🎲')
+
     if user_id not in SEND_MESSAGE_STATE:
         return
 
@@ -400,6 +414,7 @@ async def game_results(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     )
 
     return GAME_RESULTS_TEAM
+
 
 async def handle_game_results_team_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
