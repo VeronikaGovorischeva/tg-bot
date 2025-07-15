@@ -8,4 +8,8 @@ google-auth-httplib2>=0.1.0
 google-auth-oauthlib>=1.0.0
 google~=3.0.0
 protobuf~=6.30.2
-pymongo>=4.0.0
+pymongo==4.13.2
+pytest==8.4.1
+pytest-asyncio==1.0.0
+pytest-mock==3.14.1
+pytest-cov==6.2.1
