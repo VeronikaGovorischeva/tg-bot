@@ -807,6 +807,20 @@ async def handle_close_vote_confirmation(update: Update, context: ContextTypes.D
         return
 
     vote_id, vote_data = options[idx]
+
+    if vote_data.get("type") == VoteType.YES_NO:
+        context.user_data["closing_vote_id"] = vote_id
+        context.user_data["closing_vote_data"] = vote_data
+
+        await query.edit_message_text(
+            f"Введіть суму оплати для голосування (в гривнях):\n\n"
+            f"📊 {vote_data['question']}\n\n"
+            f"Введіть:\n"
+            f"• 0 - якщо голосування безкоштовне\n"
+            f"• Суму (наприклад: 150)"
+        )
+        return
+
     general_votes = load_data(GENERAL_FILE, {})
 
     if vote_id not in general_votes:
@@ -817,6 +831,89 @@ async def handle_close_vote_confirmation(update: Update, context: ContextTypes.D
     save_data(general_votes, GENERAL_FILE)
 
     await query.edit_message_text(f"✅ Голосування закрито:\n\n📊 {vote_data['question']}")
+
+
+async def handle_close_vote_amount_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if "closing_vote_id" not in context.user_data:
+        return
+
+    try:
+        amount = int(update.message.text.strip())
+        if amount < 0:
+            await update.message.reply_text("⚠️ Сума не може бути від'ємною. Спробуйте ще раз:")
+            return
+    except ValueError:
+        await update.message.reply_text("⚠️ Будь ласка, введіть число. Спробуйте ще раз:")
+        return
+
+    vote_id = context.user_data["closing_vote_id"]
+    vote_data = context.user_data["closing_vote_data"]
+
+    general_votes = load_data(GENERAL_FILE, {})
+    if vote_id in general_votes:
+        general_votes[vote_id]["is_active"] = False
+        save_data(general_votes, GENERAL_FILE)
+
+    if amount > 0:
+        await process_general_vote_payments(update, context, vote_id, vote_data, amount)
+
+    del context.user_data["closing_vote_id"]
+    del context.user_data["closing_vote_data"]
+
+    success_message = f"✅ Голосування закрито:\n\n📊 {vote_data['question']}\n\n"
+    if amount > 0:
+        success_message += f"💰 Повідомлення про оплату {amount} грн надіслано учасникам"
+    else:
+        success_message += "🆓 Голосування безкоштовне"
+
+    await update.message.reply_text(success_message)
+
+
+async def process_general_vote_payments(update, context, vote_id, vote_data, amount):
+    from payments import CARD_NUMBER
+
+    responses = load_data(GENERAL_VOTES_FILE, {"votes": {}})
+    vote_responses = responses.get("votes", {}).get(vote_id, {})
+
+    yes_voters = [uid for uid, response in vote_responses.items() if response.get("response") == "Так"]
+
+    if not yes_voters:
+        print(f"⚠️ Немає учасників для оплати голосування {vote_id}")
+        return
+
+    payments = load_data("payments", {})
+
+    for uid in yes_voters:
+        payment_key = f"general_vote_{vote_id}_{uid}"
+        payments[payment_key] = {
+            "user_id": uid,
+            "training_id": f"general_vote_{vote_id}",
+            "general_vote_id": vote_id,
+            "amount": amount,
+            "total_training_cost": amount,
+            "training_datetime": f"Голосування: {vote_data['question'][:50]}{'...' if len(vote_data['question']) > 50 else ''}",
+            "card": CARD_NUMBER,
+            "paid": False
+        }
+
+        keyboard = [[InlineKeyboardButton("✅ Я оплатив(ла)",
+                                          callback_data=f"paid_yes_general_vote_{vote_id}_{uid}")]]
+
+        try:
+            await context.bot.send_message(
+                chat_id=int(uid),
+                text=(f"💳 Ти проголосував(ла) 'ТАК' у голосуванні:\n\n"
+                      f"📊 {vote_data['question']}\n\n"
+                      f"💰 Сума до сплати: {amount} грн\n"
+                      f"💳 Карта для оплати: `{CARD_NUMBER}`\n\n"
+                      f"Натисни кнопку нижче, коли оплатиш:"),
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            print(f"❌ Помилка надсилання платежу {uid}: {e}")
+
+    save_data(payments, "payments")
 
 
 async def cancel_vote_creation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1760,3 +1857,4 @@ def setup_voting_handlers(app):
     app.add_handler(CallbackQueryHandler(handle_vote_notify_selection, pattern=r"^notify_vote_\d+$"))
     app.add_handler(CallbackQueryHandler(handle_close_vote_selection, pattern=r"^close_vote_select_\d+$"))
     app.add_handler(CallbackQueryHandler(handle_close_vote_confirmation, pattern=r"^close_vote_(confirm_\d+|cancel)$"))
+    # app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_close_vote_amount_input)) # WITH THIS UNCOMMENTED SEND MESSAGE DOESN'T WORK
