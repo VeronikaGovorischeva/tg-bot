@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import Mock, patch, MagicMock,AsyncMock
+from unittest.mock import Mock, patch, MagicMock, AsyncMock
 from telegram import Update, User, Message, CallbackQuery
 from telegram.ext import ContextTypes, ConversationHandler
 
@@ -73,6 +73,17 @@ class TestUserProfile:
         }
 
         assert result == expected
+
+    def test_user_profile_with_none_username(self):
+        """Test profile creation with None username"""
+        profile = UserProfile(telegram_id="123", telegram_username=None)
+        assert profile.telegram_username is None
+
+    def test_user_profile_username_in_serialization(self):
+        """Test username handling in to_dict"""
+        profile = UserProfile(telegram_id="123", telegram_username=None)
+        result = profile.to_dict()
+        assert result["telegram_username"] is None
 
     def test_to_dict_with_none_team(self):
         profile = UserProfile(telegram_id="123", telegram_username="test")
