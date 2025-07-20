@@ -885,7 +885,7 @@ async def finalize_game_closure(update, context, amount):
         message += f"🏆 MVP: {mvp_name}\n"
 
     if amount:
-        message += f"💰 Оплата: {amount} грн з особи\n"
+        message += f"💰 Оплата: {amount} грн\n"
         message += f"💳 Повідомлення про оплату надіслано учасникам"
     else:
         message += f"🆓 Гра безкоштовна"
@@ -912,6 +912,7 @@ async def process_game_payments(context, game_id, game, amount):
         "universiad": "Універсіада"
     }
     game_type = type_names.get(game.get('type'), game.get('type'))
+    amount_per_player = round(amount / len(payers))
 
     for uid in payers:
         payment_key = f"game_{game_id}_{uid}"
@@ -919,7 +920,7 @@ async def process_game_payments(context, game_id, game, amount):
             "user_id": uid,
             "training_id": f"game_{game_id}",
             "game_id": game_id,
-            "amount": amount,
+            "amount": amount_per_player,
             "total_training_cost": amount,
             "training_datetime": f"{game_type} - {game['date']} проти {game['opponent']}",
             "card": CARD_NUMBER,
@@ -935,7 +936,7 @@ async def process_game_payments(context, game_id, game, amount):
                 text=(f"💳 Ти брав(-ла) участь у грі:\n\n"
                       f"🏆 {game_type}\n"
                       f"📅 {game['date']} проти {game['opponent']}\n"
-                      f"💰 Сума до сплати: {amount} грн\n"
+                      f"💰 Сума до сплати: {amount_per_player} грн\n"
                       f"💳 Карта для оплати: `{CARD_NUMBER}`\n\n"
                       f"Натисни кнопку нижче, коли оплатиш:"),
                 reply_markup=InlineKeyboardMarkup(keyboard),
