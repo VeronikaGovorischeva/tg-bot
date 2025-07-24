@@ -1089,7 +1089,8 @@ async def handle_vote_other_cast(update: Update, context: ContextTypes.DEFAULT_T
         votes = load_data(TRAINING_VOTES_FILE, DEFAULT_VOTES_STRUCTURE)
         if vote_id not in votes["votes"]:
             votes["votes"][vote_id] = {}
-        votes["votes"][vote_id][user_id] = {"name": name, "vote": vote}
+        votes["votes"][vote_id][user_id] = {"name": name, "vote": vote,
+                                            "timestamp": datetime.datetime.now().isoformat()}
         save_data(votes, TRAINING_VOTES_FILE)
 
     async def save_game_vote(vote_id: str, user_id: str, name: str, vote: str):
@@ -1232,7 +1233,8 @@ async def handle_vote(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("⚠️ Досягнуто максимум голосів 'так'. Ви не можете проголосувати.")
         return
 
-    votes["votes"][training_id][user_id] = {"name": user_name, "vote": vote}
+    votes["votes"][training_id][user_id] = {"name": user_name, "vote": vote,
+                                            "timestamp": datetime.datetime.now().isoformat()}
     save_data(votes, 'votes')
 
     updated_yes_votes = sum(1 for v in votes["votes"][training_id].values() if v["vote"] == "yes")
@@ -1804,6 +1806,85 @@ async def handle_vote_notify_selection(update: Update, context: ContextTypes.DEF
     )
 
 
+async def vote_times(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_authorized(update.message.from_user.id):
+        await update.message.reply_text("⛔ У вас немає прав для перегляду часу голосувань.")
+        return
+
+    all_votes = unified_view_manager.get_all_active_votes()
+
+    if not all_votes:
+        await update.message.reply_text("Наразі немає активних голосувань.")
+        return
+
+    keyboard = []
+    context.user_data["vote_times_options"] = all_votes
+
+    for idx, vote in enumerate(all_votes):
+        keyboard.append([InlineKeyboardButton(vote["label"], callback_data=f"vote_times_{idx}")])
+
+    await update.message.reply_text(
+        "⏰ Час голосувань\n\nОберіть голосування для перегляду часу:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+async def handle_vote_times_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    idx = int(query.data.replace("vote_times_", ""))
+    vote_options = context.user_data.get("vote_times_options", [])
+
+    if idx >= len(vote_options):
+        await query.edit_message_text("⚠️ Помилка: вибране голосування більше не доступне.")
+        return
+
+    selected_vote = vote_options[idx]
+    vote_type = selected_vote["type"]
+    vote_id = selected_vote["id"]
+    votes_data = selected_vote["votes"]
+
+    message = f"⏰ Час голосувань для:\n{selected_vote['label']}\n\n"
+
+    # Sort votes by timestamp
+    sorted_votes = []
+    for user_id, vote_info in votes_data.items():
+        timestamp_str = vote_info.get("timestamp")
+        if timestamp_str:
+            try:
+                timestamp = datetime.datetime.fromisoformat(timestamp_str)
+                sorted_votes.append(
+                    (vote_info["name"], vote_info.get("vote", vote_info.get("response", "N/A")), timestamp))
+            except:
+                sorted_votes.append((vote_info["name"], vote_info.get("vote", vote_info.get("response", "N/A")), None))
+        else:
+            sorted_votes.append((vote_info["name"], vote_info.get("vote", vote_info.get("response", "N/A")), None))
+
+    sorted_votes.sort(key=lambda x: x[2] if x[2] else datetime.datetime.max)
+
+    for name, vote_response, timestamp in sorted_votes:
+        if timestamp:
+            time_str = timestamp.strftime("%d.%m.%Y %H:%M:%S")
+        else:
+            time_str = "Час невідомий"
+
+        if vote_type in ["training", "game"]:
+            vote_display = "✅ БУДЕ" if vote_response == "yes" else "❌ НЕ БУДЕ"
+        else:
+            vote_display = str(vote_response)
+
+        message += f"• {name}: {vote_display}\n  📅 {time_str}\n\n"
+
+    if len(message) > 4000:
+        parts = [message[i:i + 4000] for i in range(0, len(message), 4000)]
+        for part in parts:
+            await query.message.reply_text(part)
+        await query.delete_message()
+    else:
+        await query.edit_message_text(message)
+
+
 def create_general_vote_handler():
     return ConversationHandler(
         entry_points=[CommandHandler("add_vote", add_vote)],
@@ -1834,6 +1915,8 @@ def setup_voting_handlers(app):
     app.add_handler(CommandHandler("vote", unified_vote_command))
     # /view_votesd
     app.add_handler(CommandHandler("view_votes", unified_view_votes))
+    # Admin: /vote_times
+    app.add_handler(CommandHandler("vote_times", vote_times))
     # Admin: /close_vote
     app.add_handler(CommandHandler("close_vote", close_vote))
     # Admin: /unlock_training
@@ -1851,6 +1934,7 @@ def setup_voting_handlers(app):
     app.add_handler(CallbackQueryHandler(handle_vote, pattern=r"^vote_(yes|no)_"))
     app.add_handler(CallbackQueryHandler(handle_unified_view_selection, pattern=r"^view_unified_\d+$"))
     app.add_handler(CallbackQueryHandler(handle_view_votes_selection, pattern=r"^view_votes_\d+"))
+    app.add_handler(CallbackQueryHandler(handle_vote_times_selection, pattern=r"^vote_times_\d+$"))
     app.add_handler(CallbackQueryHandler(handle_vote_other_cast, pattern=r"^vote_other_cast_"))
     app.add_handler(CallbackQueryHandler(handle_general_vote_response, pattern=r"^general_vote_"))
     app.add_handler(CallbackQueryHandler(handle_unlock_selection, pattern=r"^unlock_training_\d+"))
