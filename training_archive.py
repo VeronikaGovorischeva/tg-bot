@@ -178,7 +178,7 @@ async def enhanced_reset_today_constant_trainings_status():
     updated = False
 
     for tid, training in one_time_trainings.items():
-        if training.get("status") != "not charged" or not training.get("with_coach"):
+        if training.get("status") != "not charged":
             continue
 
         try:
