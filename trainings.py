@@ -589,6 +589,48 @@ def format_next_training_message(user_id: str) -> str:
         f"{desc_str}"
     )
 
+async def delete_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Command to delete a training by ID (admins only)."""
+    if not is_authorized(update.message.from_user.id):
+        await update.message.reply_text("⛔ У вас немає прав для видалення тренувань.")
+        return
+
+    if not context.args:
+        await update.message.reply_text(
+            "Використання: /delete_training ID\n"
+            "Щоб дізнатися ID, перегляньте список тренувань (/week_trainings або /last_training)."
+        )
+        return
+
+    training_id = context.args[0]
+
+    one_time = load_data("one_time_trainings", {})
+    constant = load_data("constant_trainings", {})
+
+    if training_id in one_time:
+        training = one_time.pop(training_id)
+        save_data(one_time, "one_time_trainings")
+        deleted_from = "одноразових"
+    elif training_id in constant:
+        training = constant.pop(training_id)
+        save_data(constant, "constant_trainings")
+        deleted_from = "постійних"
+    else:
+        await update.message.reply_text(f"⚠️ Тренування з ID {training_id} не знайдено.")
+        return
+
+    desc = training.get("description", "")
+    desc_str = f" ({desc})" if desc else ""
+    if "date" in training:  # one-time
+        label = f"{training['date']} {training['start_hour']:02d}:{training['start_min']:02d}"
+    else:  # constant
+        weekdays = ["Понеділок","Вівторок","Середа","Четвер","П'ятниця","Субота","Неділя"]
+        label = f"{weekdays[training['weekday']]} {training['start_hour']:02d}:{training['start_min']:02d}"
+
+    await update.message.reply_text(
+        f"✅ Тренування {label}{desc_str} успішно видалено з {deleted_from}."
+    )
+
 
 async def next_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
