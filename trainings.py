@@ -646,5 +646,7 @@ def setup_training_handlers(app):
     app.add_handler(CommandHandler("next_training", next_training))
     # week_trainings
     app.add_handler(CommandHandler("week_trainings", week_trainings))
+    # Admin: delete_training
+    app.add_handler(CommandHandler("delete_training", delete_training))
     # Admin: /add_training
     app.add_handler(create_training_add_handler())
