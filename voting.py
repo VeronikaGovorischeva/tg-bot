@@ -18,7 +18,7 @@ GENERAL_VOTES_FILE = "general_votes"
 GAMES_FILE = "games"
 GAME_VOTES_FILE = "game_votes"
 DEFAULT_VOTES_STRUCTURE = {"votes": {}}
-VOTES_LIMIT = 14
+VOTES_LIMIT = 30
 ONE_TIME_TRAININGS_FILE = "one_time_trainings"
 CONSTANT_TRAININGS_FILE = "constant_trainings"
 

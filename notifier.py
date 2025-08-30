@@ -8,7 +8,7 @@ ONE_TIME_TRAININGS_FILE = "one_time_trainings"
 CONSTANT_TRAININGS_FILE = "constant_trainings"
 VOTES_FILE = "votes"
 WEEKDAYS = ['понеділок', 'вівторок', 'середу', 'четвер', "п'ятницю", 'суботу', 'неділю']
-VOTES_LIMIT = 14
+VOTES_LIMIT = 30
 
 
 def generate_training_id(training, training_type):
