@@ -589,6 +589,117 @@ def format_next_training_message(user_id: str) -> str:
         f"{desc_str}"
     )
 
+async def delete_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Адмін-команда: показати ТІЛЬКИ тренування, за які вже є голоси, і видалити обране.
+       Кнопки показують дату/день тижня + час. Використовуються ЛИШЕ наявні ID тренувань."""
+    if not is_authorized(update.message.from_user.id):
+        await update.message.reply_text("⛔ У вас немає прав для цієї команди.")
+        return
+
+    one_time = load_data("one_time_trainings", {})
+    constant = load_data("constant_trainings", {})
+    votes_map = load_data("votes", {"votes": {}}).get("votes", {})
+
+    buttons = []
+
+    # One-time trainings: vote key = "DD.MM.YYYY_HH:MM"
+    for tid, t in one_time.items():
+        try:
+            vote_key = f"{t['date']}_{t['start_hour']:02d}:{t['start_min']:02d}"
+        except KeyError:
+            continue
+        if vote_key in votes_map and votes_map[vote_key]:
+            label = f"{t['date']} {t['start_hour']:02d}:{t['start_min']:02d}"
+            buttons.append([InlineKeyboardButton(label, callback_data=f"deltr_select_one_{tid}")])
+
+    # Constant trainings: vote key = "const_<weekday>_HH:MM"
+    for tid, t in constant.items():
+        try:
+            vote_key = f"const_{t['weekday']}_{t['start_hour']:02d}:{t['start_min']:02d}"
+        except KeyError:
+            continue
+        if vote_key in votes_map and votes_map[vote_key]:
+            weekdays = ["Понеділок","Вівторок","Середа","Четвер","П'ятниця","Субота","Неділя"]
+            label = f"{weekdays[t['weekday']]} {t['start_hour']:02d}:{t['start_min']:02d}"
+            buttons.append([InlineKeyboardButton(label, callback_data=f"deltr_select_const_{tid}")])
+
+    if not buttons:
+        await update.message.reply_text("Немає тренувань з активними голосами.")
+        return
+
+    await update.message.reply_text(
+        "Оберіть тренування для видалення:",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
+
+async def handle_delete_training_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    # deltr_select_(one|const)_<tid>
+    parts = query.data.split("_", 3)
+    if len(parts) != 4:
+        await query.edit_message_text("⚠️ Помилка: тренування не знайдено.")
+        return
+
+    _, _, col_tag, tid = parts
+    collection = "one_time_trainings" if col_tag == "one" else "constant_trainings"
+    trainings = load_data(collection, {})
+    t = trainings.get(tid)
+    if not t:
+        await query.edit_message_text("⚠️ Тренування не знайдено.")
+        return
+
+    # Build human label (using only existing fields)
+    if col_tag == "one":
+        label = f"{t['date']} {t['start_hour']:02d}:{t['start_min']:02d}"
+    else:
+        weekdays = ["Понеділок","Вівторок","Середа","Четвер","П'ятниця","Субота","Неділя"]
+        label = f"{weekdays[t['weekday']]} {t['start_hour']:02d}:{t['start_min']:02d}"
+
+    kb = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🗑 Підтвердити видалення", callback_data=f"deltr_confirm_yes_{col_tag}_{tid}"),
+            InlineKeyboardButton("↩️ Скасувати",            callback_data=f"deltr_confirm_no_{col_tag}_{tid}")
+        ]
+    ])
+    await query.edit_message_text(f"Видалити тренування: {label}?", reply_markup=kb)
+
+
+async def handle_delete_training_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    # deltr_confirm_(yes|no)_(one|const)_<tid>
+    parts = query.data.split("_", 4)
+    if len(parts) != 5:
+        await query.edit_message_text("⚠️ Помилка підтвердження.")
+        return
+
+    _, _, decision, col_tag, tid = parts
+    if decision == "no":
+        await query.edit_message_text("Скасовано.")
+        return
+
+    collection = "one_time_trainings" if col_tag == "one" else "constant_trainings"
+    trainings = load_data(collection, {})
+    t = trainings.get(tid)
+    if not t:
+        await query.edit_message_text("⚠️ Тренування не знайдено.")
+        return
+
+    # Build label before deletion (only from existing fields)
+    if col_tag == "one":
+        label = f"{t['date']} {t['start_hour']:02d}:{t['start_min']:02d}"
+    else:
+        weekdays = ["Понеділок","Вівторок","Середа","Четвер","П'ятниця","Субота","Неділя"]
+        label = f"{weekdays[t['weekday']]} {t['start_hour']:02d}:{t['start_min']:02d}"
+
+    trainings.pop(tid, None)
+    save_data(trainings, collection)
+
+    await query.edit_message_text(f"✅ Видалено: {label}")
 
 async def next_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
@@ -604,5 +715,11 @@ def setup_training_handlers(app):
     app.add_handler(CommandHandler("next_training", next_training))
     # week_trainings
     app.add_handler(CommandHandler("week_trainings", week_trainings))
+    # Admin: delete_training
+    app.add_handler(CommandHandler("delete_training", delete_training))
+    app.add_handler(CallbackQueryHandler(handle_delete_training_selection, pattern=r"^deltr_select_(one|const)_.+$"))
+    app.add_handler(
+        CallbackQueryHandler(handle_delete_training_confirm, pattern=r"^deltr_confirm_(yes|no)_(one|const)_.+$"))
     # Admin: /add_training
+
     app.add_handler(create_training_add_handler())

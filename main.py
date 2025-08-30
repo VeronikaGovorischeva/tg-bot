@@ -4,7 +4,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from telegram import Update
 from telegram.ext import Application, ContextTypes
 
-from trainings import setup_training_handlers, reset_today_constant_trainings_status
+from trainings import setup_training_handlers, reset_today_constant_trainings_status, delete_training
 from registration import setup_registration_handlers
 # from games import setup_game_handlers
 from voting import setup_voting_handlers
