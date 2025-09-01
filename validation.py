@@ -1,7 +1,7 @@
-danya_id, nika_id, tocha_id = "786580423", "1028639864", "679210513"
+danya_id, nika_id, tocha_id, detiuk_id = "786580423", "1028639864", "679210513", "1489352252"
 ADMIN_IDS = [danya_id, nika_id]
 
-EXCLUDED_IDS = [tocha_id]
+EXCLUDED_IDS = [tocha_id, detiuk_id]
 
 
 def is_authorized(user_id):
