@@ -79,7 +79,7 @@ async def handle_send_message_input(update: Update, context: ContextTypes.DEFAUL
 
 
 async def notify_debtors(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
+    user_id = str(update.message.from_user.id)
     if user_id not in ADMIN_IDS:
         await update.message.reply_text("⛔ У вас немає прав для надсилання повідомлень боржникам.")
         return

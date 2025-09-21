@@ -713,13 +713,13 @@ async def reset_today_constant_trainings_status():
 def setup_training_handlers(app):
     # /next_training
     app.add_handler(CommandHandler("next_training", next_training))
-    # week_trainings
+    # /week_trainings
     app.add_handler(CommandHandler("week_trainings", week_trainings))
-    # Admin: delete_training
+
+    # Admin: /delete_training
     app.add_handler(CommandHandler("delete_training", delete_training))
     app.add_handler(CallbackQueryHandler(handle_delete_training_selection, pattern=r"^deltr_select_(one|const)_.+$"))
     app.add_handler(
         CallbackQueryHandler(handle_delete_training_confirm, pattern=r"^deltr_confirm_(yes|no)_(one|const)_.+$"))
     # Admin: /add_training
-
     app.add_handler(create_training_add_handler())
