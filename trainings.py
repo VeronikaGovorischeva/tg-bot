@@ -292,6 +292,15 @@ async def save_training_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 save_data(trainings, file_path)
         except:
             pass
+    else:
+        try:
+            # Open voting immediately for constant trainings
+            await open_constant_training_voting_immediately(context, training_data, new_id)
+            training_data["voting_opened"] = True
+            trainings[new_id] = training_data
+            save_data(trainings, file_path)
+        except:
+            pass
 
 
 async def open_onetime_training_voting_immediately(context, training, training_id):
@@ -333,6 +342,54 @@ async def open_onetime_training_voting_immediately(context, training, training_i
                 )
             except Exception as e:
                 print(f"❌ ONETIME: Помилка надсилання до {uid}: {e}")
+async def open_constant_training_voting_immediately(context, training, training_id):
+    users = load_data("users")  # same as DATA_FILE for users
+
+    # For constant trainings we generate vote_id differently
+    vote_id = f"const_{training['weekday']}_{training['start_hour']:02d}:{training['start_min']:02d}"
+
+    start_time = f"{training['start_hour']:02d}:{training['start_min']:02d}"
+    end_time = f"{training['end_hour']:02d}:{training['end_min']:02d}"
+
+    coach_str = " (З тренером)" if training.get("with_coach") else ""
+    location = training.get("location", "")
+    location = "" if location and location.lower() == "наукма" else location
+    loc_str = f"\n📍 {location}" if location else ""
+    description = training.get("description", "")
+    desc_str = f"\nℹ️ {description}" if description else ""
+
+    # Use weekday name instead of fixed date
+    weekday_names = [
+        "Понеділок", "Вівторок", "Середа",
+        "Четвер", "П'ятниця", "Субота", "Неділя"
+    ]
+    weekday_str = weekday_names[training["weekday"]]
+
+    message = (
+        f"🏐 Почалося голосування!\n"
+        f"Тренування в {weekday_str}{coach_str}\n"
+        f"⏰ З {start_time} до {end_time}"
+        f"{loc_str}"
+        f"{desc_str}"
+    )
+
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Так", callback_data=f"vote_yes_{vote_id}"),
+            InlineKeyboardButton("❌ Ні", callback_data=f"vote_no_{vote_id}")
+        ]
+    ])
+
+    for uid, info in users.items():
+        if training.get("team") in [info.get("team"), "Both"]:
+            try:
+                await context.bot.send_message(
+                    chat_id=int(uid),
+                    text=message,
+                    reply_markup=keyboard
+                )
+            except Exception as e:
+                print(f"❌ CONSTANT: Помилка надсилання до {uid}: {e}")
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
