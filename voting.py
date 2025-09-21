@@ -190,7 +190,7 @@ class UnifiedVoteManager:
             weekday = training.get("weekday", 0)
             date_str = WEEKDAYS[weekday] if 0 <= weekday < len(WEEKDAYS) else "Невідомо"
 
-        time_str = f"{training['start_hour']:02d}:{training['start_min']:02d}"
+        time_str = f"{training['start_hour']:02d}:{training['start_min']:02d} - {training['end_hour']:02d}:{training['end_min']:02d}"
         base_label = f"🏐 {date_str} {time_str}"
 
         extra_info = []
@@ -1296,13 +1296,13 @@ async def unlock_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     for tid, t in one_time.items():
         if t.get("team") in ["Male", "Female"]:
-            label = f"{t['date']} о {t['start_hour']:02d}:{t['start_min']:02d}"
+            label = f"{t['date']} о {t['start_hour']:02d}:{t['start_min']:02d} - {t['end_hour']:02d}:{t['end_min']:02d}"
             options.append((tid, "one_time", label))
 
     for tid, t in constant.items():
         if t.get("team") in ["Male", "Female"]:
             weekday = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"][t["weekday"]]
-            label = f"{weekday} о {t['start_hour']:02d}:{t['start_min']:02d}"
+            label = f"{weekday} о {t['start_hour']:02d}:{t['start_min']:02d} - {t['end_hour']:02d}:{t['end_min']:02d}"
             options.append((tid, "constant", label))
 
     if not options:
@@ -1536,7 +1536,7 @@ class UnifiedViewManager:
             # Одноразове тренування - date завжди рядок з бази
             date_str = training.get("date", "")
 
-        time_str = f"{training.get('start_hour', 0):02d}:{training.get('start_min', 0):02d}"
+        time_str = f"{training.get('start_hour', 0):02d}:{training.get('start_min', 0):02d} - {training['end_hour']:02d}:{training['end_min']:02d}"
         base_label = f"🏐 {date_str} {time_str}"
 
         extra_info = []
