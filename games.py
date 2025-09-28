@@ -10,6 +10,7 @@ from validation import is_authorized
 GAME_TYPE, GAME_TEAM, GAME_DATE, GAME_TIME, GAME_OPPONENT, GAME_LOCATION, GAME_ARRIVAL = range(300, 307)
 EDIT_GAME_SELECT, EDIT_GAME_FIELD, EDIT_GAME_VALUE = range(320, 323)
 CLOSE_GAME_SELECT, CLOSE_GAME_RESULTS, CLOSE_GAME_MVP, CLOSE_GAME_AMOUNT = range(400, 404)
+GAME_COST, GAME_SELECT_PLAYERS, GAME_ENTER_CARD = range(200, 203)
 CARD_NUMBER = "5457 0825 2151 6794"
 
 GAMES_FILE = "games"
@@ -41,7 +42,8 @@ GAME_MESSAGES = {
     "enter_notes": "Введіть додаткові примітки або надішліть '-' якщо немає:",
     "game_saved": "Інформацію про гру успішно збережено!",
     "invalid_date": "Неправильний формат дати. Будь ласка, використовуйте формат ДД.ММ.РРРР",
-    "invalid_time": "Неправильний формат часу. Будь ласка, використовуйте формат ГГ:ХХ"
+    "invalid_time": "Неправильний формат часу. Будь ласка, використовуйте формат ГГ:ХХ",
+    "not_stolichna": "Ви не приймаєте участь в Столичній лізі"
 }
 
 
@@ -259,6 +261,8 @@ async def send_game_voting_to_team(context: ContextTypes.DEFAULT_TYPE, game_data
     users = load_data("users", {})
     type_name = game_manager.game_types[GameType(game_data['type'])]
 
+
+
     message = f"Нова гра!\n\n"
     message += f"{type_name}\n"
     message += f"Дата: {game_data['date']} о {game_data['time']}\n"
@@ -274,18 +278,23 @@ async def send_game_voting_to_team(context: ContextTypes.DEFAULT_TYPE, game_data
         ]
     ])
 
-    count = 0
     for uid, user_info in users.items():
-        if game_data["team"] in [user_info.get("team"), "Both"]:
-            try:
-                await context.bot.send_message(
-                    chat_id=int(uid),
-                    text=message,
-                    reply_markup=keyboard
-                )
-                count += 1
-            except Exception as e:
-                print(f"Помилка надсилання голосування до {uid}: {e}")
+        # existing team filter
+        if game_data["team"] not in [user_info.get("team"), "Both"]:
+            continue
+
+        # new Stolichna filter
+        if game_data.get("type") == "stolichka" and not user_info.get("stolichna", False):
+            continue
+
+        try:
+            await context.bot.send_message(
+                chat_id=int(uid),
+                text=message,
+                reply_markup=keyboard
+            )
+        except Exception as e:
+            print(f"Помилка надсилання голосування до {uid}: {e}")
 
 
 async def next_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -304,6 +313,9 @@ async def next_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     for game in games.values():
         if game.get("team") not in [user_team, "Both"]:
+            continue
+
+        if game.get("type") == "stolichka" and not users[user_id].get("stolichna", False):
             continue
 
         try:
@@ -547,9 +559,19 @@ async def handle_game_vote(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = str(query.from_user.id)
     users = load_data("users", {})
-    user_name = users.get(user_id, {}).get("name", "Невідомий")
+    user_info = users.get(user_id)
 
-    game_votes = load_data(GAME_VOTES_FILE, {"votes": {}})
+    games = load_data("games", {})
+    game = games.get(game_id)
+
+    # ✅ Stolichna filter
+    if game and game.get("type") == "stolichka" and not user_info.get("stolichna", False):
+        await query.edit_message_text("⚠️ Це голосування доступне тільки для учасників Столичної ліги.")
+        return
+
+    user_name = user_info.get("name", "Невідомий") if user_info else "Невідомий"
+
+    game_votes = load_data("game_votes", {"votes": {}})
     if game_id not in game_votes["votes"]:
         game_votes["votes"][game_id] = {}
 
@@ -557,10 +579,11 @@ async def handle_game_vote(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "name": user_name,
         "vote": vote
     }
-    save_data(game_votes, GAME_VOTES_FILE)
+    save_data(game_votes, "game_votes")
 
     vote_text = "БУДУ" if vote == "yes" else "НЕ БУДУ"
     await query.edit_message_text(f"✅ Ваш голос '{vote_text}' збережено!")
+
 
 
 async def week_games(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -672,6 +695,9 @@ async def handle_close_game_selection(update: Update, context: ContextTypes.DEFA
     game_id, game = uncompleted_games[idx]
     context.user_data["selected_game_id"] = game_id
     context.user_data["selected_game"] = game
+    context.user_data[("selected_game_id"
+                    )] = game_id  # ✅ store it here
+    context.user_data["closing_game"] = game
 
     type_names = {
         "friendly": "Товариська",
@@ -847,18 +873,153 @@ async def handle_close_game_mvp(update: Update, context: ContextTypes.DEFAULT_TY
 
     return CLOSE_GAME_AMOUNT
 
-
-async def handle_game_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def handle_game_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        amount = int(update.message.text.strip())
-        if amount < 0:
-            await update.message.reply_text("⚠️ Сума не може бути від'ємною. Спробуйте ще раз:")
-            return CLOSE_GAME_AMOUNT
+        cost = int(update.message.text.strip())  # ✅ cast to int
+        if cost <= 0:
+            await update.message.reply_text("⚠️ Сума має бути більше 0. Спробуйте ще раз:")
+            return GAME_COST
     except ValueError:
-        await update.message.reply_text("⚠️ Будь ласка, введіть число. Спробуйте ще раз:")
-        return CLOSE_GAME_AMOUNT
+        await update.message.reply_text("⚠️ Введіть число. Спробуйте ще раз:")
+        return GAME_COST
 
-    return await finalize_game_closure(update, context, amount if amount > 0 else None)
+    context.user_data["game_cost"] = int(cost)
+    game_id = context.user_data["selected_game_id"]
+
+    game_votes = load_data("game_votes", {"votes": {}})
+    voters = game_votes.get("votes", {}).get(game_id, {})
+    yes_voters = {uid: v for uid, v in voters.items() if v.get("vote") == "yes"}
+
+    if not yes_voters:
+        await update.message.reply_text("❌ Немає гравців, що проголосували 'Буду'.")
+        return ConversationHandler.END
+
+    context.user_data["game_voters"] = yes_voters
+    context.user_data["selected_players"] = set()
+
+    keyboard = [
+        [InlineKeyboardButton(f"{v['name']}", callback_data=f"toggle_player_{uid}")]
+        for uid, v in yes_voters.items()
+    ]
+    keyboard.append([InlineKeyboardButton("✅ Готово", callback_data="players_done")])
+
+    await update.message.reply_text(
+        "Оберіть гравців, які реально грали (можна кількох):",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+    return GAME_SELECT_PLAYERS
+
+async def handle_toggle_player(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()  # ✅ must be here
+
+    uid = query.data.replace("toggle_player_", "")
+    selected = context.user_data["selected_players"]
+
+    if uid in selected:
+        selected.remove(uid)
+    else:
+        selected.add(uid)
+
+    # Rebuild keyboard with ✅ mark
+    yes_voters = context.user_data["game_voters"]
+    keyboard = [
+        [InlineKeyboardButton(("✅ " if u in selected else "") + v["name"],
+                              callback_data=f"toggle_player_{u}")]
+        for u, v in yes_voters.items()
+    ]
+    keyboard.append([InlineKeyboardButton("✅ Готово", callback_data="players_done")])
+
+    await query.edit_message_reply_markup(InlineKeyboardMarkup(keyboard))
+    return GAME_SELECT_PLAYERS   # ✅ stay in same state
+
+
+async def handle_players_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()   # ✅ important
+
+    selected = context.user_data["selected_players"]
+    if not selected:
+        await query.edit_message_text("❌ Ви не обрали жодного гравця.")
+        return ConversationHandler.END
+
+    context.user_data["num_players"] = len(selected)
+
+    await query.edit_message_text(
+        f"✅ Обрано {len(selected)} гравців. Тепер введіть номер карти для оплати:"
+    )
+    return GAME_ENTER_CARD   # ✅ go forward
+
+
+async def handle_game_card_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # 1) Read card
+    card = update.message.text.strip()
+    context.user_data["game_card"] = card
+
+    # 2) Collected earlier
+    game_id = context.user_data["selected_game_id"]
+    cost = int(context.user_data["game_cost"])
+    players = context.user_data["selected_players"]
+
+    # 3) Load game info for messages
+    games = load_data("games", {})
+    game = games.get(game_id, {})
+
+    # 4) Split cost
+    if not players:
+        await update.message.reply_text("❌ Ви не обрали жодного гравця.")
+        return ConversationHandler.END
+    per_person = round(cost / len(players))
+
+    # 5) Save payments like trainings
+    payments = load_data("payments", {})
+    success_count = 0
+    training_id = f"game_{game_id}"   # unified id
+
+    for uid in players:
+        payment_key = f"{training_id}_{uid}"  # EXACTLY like trainings
+        payments[payment_key] = {
+            "user_id": uid,
+            "training_id": training_id,
+            "amount": per_person,
+            "total_training_cost": cost,
+            "training_datetime": f"{game.get('date')} {game.get('time')} проти {game.get('opponent')}",
+            "card": card,
+            "paid": False
+        }
+
+        kb = [[InlineKeyboardButton("✅ Я оплатив(ла)", callback_data=f"paid_yes_{training_id}_{uid}")]]
+        try:
+            await context.bot.send_message(
+                chat_id=int(uid),
+                text=(f"💳 Ти грав у гру {game.get('date')} о {game.get('time')} проти {game.get('opponent')}.\n"
+                      f"Сума до сплати: {per_person} грн\n"
+                      f"Карта для оплати: `{card}`\n\n"
+                      f"Натисни кнопку нижче, коли оплатиш:"),
+                reply_markup=InlineKeyboardMarkup(kb),
+                parse_mode='Markdown'
+            )
+            success_count += 1
+        except Exception as e:
+            print(f"❌ Помилка надсилання для {uid}: {e}")
+
+    save_data(payments, "payments")
+
+    await update.message.reply_text(
+        f"✅ Платежі створено!\n"
+        f"💰 Загальна сума: {cost} грн\n"
+        f"👥 Учасників: {len(players)}\n"
+        f"💵 По {per_person} грн з особи\n"
+        f"📤 Повідомлення надіслано {success_count} гравцям"
+    )
+
+    # 6) Finish the same way; do NOT re-create payments here
+    await finalize_game_closure(update, context, None)
+    return ConversationHandler.END
+
+
+
+
 
 
 async def finalize_game_closure(update, context, amount):
@@ -1340,7 +1501,14 @@ def create_close_game_handler():
             CLOSE_GAME_SELECT: [CallbackQueryHandler(handle_close_game_selection, pattern=r"^close_game_\d+$")],
             CLOSE_GAME_RESULTS: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_close_game_results)],
             CLOSE_GAME_MVP: [CallbackQueryHandler(handle_close_game_mvp, pattern=r"^mvp_")],
-            CLOSE_GAME_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_game_amount)]
+            CLOSE_GAME_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_game_amount)],
+            GAME_SELECT_PLAYERS: [
+                CallbackQueryHandler(handle_toggle_player, pattern=r"^toggle_player_"),
+                CallbackQueryHandler(handle_players_done, pattern=r"^players_done$")
+            ],
+            GAME_ENTER_CARD: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_game_card_input)
+            ]
         },
         fallbacks=[CommandHandler("cancel", cancel_close_game)],
         allow_reentry=True

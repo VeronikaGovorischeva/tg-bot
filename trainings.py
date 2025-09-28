@@ -728,35 +728,37 @@ async def handle_delete_training_confirm(update: Update, context: ContextTypes.D
     query = update.callback_query
     await query.answer()
 
-    # deltr_confirm_(yes|no)_(one|const)_<tid>
-    parts = query.data.split("_", 4)
-    if len(parts) != 5:
-        await query.edit_message_text("⚠️ Помилка підтвердження.")
+    if query.data == "delete_training_cancel":
+        await query.edit_message_text("❌ Видалення тренування скасовано.")
         return
 
-    _, _, decision, col_tag, tid = parts
-    if decision == "no":
-        await query.edit_message_text("Скасовано.")
+    idx = int(query.data.replace("delete_training_confirm_", ""))
+    options = context.user_data.get("delete_training_options", [])
+
+    if idx >= len(options):
+        await query.edit_message_text("⚠️ Помилка: тренування не знайдено.")
         return
 
-    collection = "one_time_trainings" if col_tag == "one" else "constant_trainings"
-    trainings = load_data(collection, {})
-    t = trainings.get(tid)
-    if not t:
-        await query.edit_message_text("⚠️ Тренування не знайдено.")
-        return
+    training_id, training = options[idx]
 
-    # Build label before deletion (only from existing fields)
-    if col_tag == "one":
-        label = f"{t['date']} {t['start_hour']:02d}:{t['start_min']:02d}"
-    else:
-        weekdays = ["Понеділок","Вівторок","Середа","Четвер","П'ятниця","Субота","Неділя"]
-        label = f"{weekdays[t['weekday']]} {t['start_hour']:02d}:{t['start_min']:02d}"
+    # Load trainings
+    one_time_trainings = load_data("one_time_trainings", {})
+    constant_trainings = load_data("constant_trainings", {})
 
-    trainings.pop(tid, None)
-    save_data(trainings, collection)
+    # Delete from the right collection
+    if training_id in one_time_trainings:
+        del one_time_trainings[training_id]
+        save_data(one_time_trainings, "one_time_trainings")
+    elif training_id in constant_trainings:
+        del constant_trainings[training_id]
+        save_data(constant_trainings, "constant_trainings")
 
-    await query.edit_message_text(f"✅ Видалено: {label}")
+    # ✅ Delete votes as well
+    votes = load_data("votes", {"votes": {}})
+    if training_id in votes.get("votes", {}):
+        del votes["votes"][training_id]
+        save_data(votes, "votes")
+        print(f"✅ Видалено голосування для тренування {training_id}")
 
 async def next_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)

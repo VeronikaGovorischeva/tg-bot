@@ -6,13 +6,13 @@ from telegram.ext import Application, ContextTypes
 
 from trainings import setup_training_handlers, reset_today_constant_trainings_status, delete_training
 from registration import setup_registration_handlers
-# from games import setup_game_handlers
+from games import setup_game_handlers
 from voting import setup_voting_handlers
 from payments import setup_payment_handlers
 from commands import setup_admin_handlers
 from notifier import check_voting_and_notify, start_voting, check_game_reminders
 
-BOT_TOKEN = os.getenv("NEW_TOKEN")
+BOT_TOKEN = os.getenv("IDONTKNOWNAMES_TOKEN")
 
 
 async def error(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -64,7 +64,7 @@ if __name__ == "__main__":
 
     setup_registration_handlers(app)
     setup_training_handlers(app)
-    # setup_game_handlers(app)
+    setup_game_handlers(app)
     setup_voting_handlers(app)
     setup_payment_handlers(app)
     setup_admin_handlers(app)  # Must be last
