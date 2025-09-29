@@ -12,7 +12,7 @@ from payments import setup_payment_handlers
 from commands import setup_admin_handlers
 from notifier import check_voting_and_notify, start_voting, check_game_reminders
 
-BOT_TOKEN = os.getenv("IDONTKNOWNAMES_TOKEN")
+BOT_TOKEN = os.getenv("NEW_TOKEN")
 
 
 async def error(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
