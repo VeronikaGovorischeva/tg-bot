@@ -756,6 +756,20 @@ async def handle_delete_training_confirm(update: Update, context: ContextTypes.D
     trainings.pop(tid, None)
     save_data(trainings, collection)
 
+    # Визначаємо ключ голосів для цього тренування
+    if col_tag == "one":
+        vote_key = f"{t['date']}_{t['start_hour']:02d}:{t['start_min']:02d}"
+    else:
+        vote_key = f"const_{t['weekday']}_{t['start_hour']:02d}:{t['start_min']:02d}"
+
+    # Видаляємо голоси
+    votes = load_data("votes", {"votes": {}})
+    if vote_key in votes["votes"]:
+        del votes["votes"][vote_key]
+        save_data(votes, "votes")
+        print(f"✅ Видалено голосування за тренування {vote_key}")
+
+
     await query.edit_message_text(f"✅ Видалено: {label}")
 
 async def next_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
