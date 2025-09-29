@@ -1,6 +1,5 @@
 import asyncio
 import os
-from asyncore import dispatcher
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from telegram import Update
