@@ -32,8 +32,8 @@ class UserProfile:
     telegram_username: Optional[str]
     name: Optional[str] = None
     team: Optional[Team] = None
-    debt: list[int] = None
     mvp: int = 0
+    stolichna: bool = False
     training_attendance: Dict = None
     game_attendance: Dict = None
 
@@ -51,8 +51,8 @@ class UserProfile:
             "telegram_username": self.telegram_username,
             "name": self.name,
             "team": self.team.value if self.team else None,
-            "debt": self.debt or [0],
             "mvp": self.mvp,
+            "stolichna": self.stolichna,
             "training_attendance": self.training_attendance,
             "game_attendance": self.game_attendance
         }
@@ -88,8 +88,8 @@ class RegistrationManager:
                 telegram_username=data.get("telegram_username"),
                 name=data.get("name"),
                 team=team,
-                debt=data.get("debt", [0]),
                 mvp=data.get("mvp", 0),
+                stolichna=data.get("stolichna", True),
                 training_attendance=data.get("training_attendance", default_attendance),
                 game_attendance=data.get("game_attendance", default_attendance)
             )
@@ -176,40 +176,3 @@ def create_registration_handler() -> ConversationHandler:
 def setup_registration_handlers(app):
     # /start
     app.add_handler(create_registration_handler())
-
-
-# def migrate_users_add_new_fields():
-#     try:
-#         users = load_data("users", {})
-#         updated_count = 0
-#
-#         for user_id, user_data in users.items():
-#             if "mvp" not in user_data:
-#                 user_data["mvp"] = 0
-#                 updated_count += 1
-#
-#             if "training_attendance" not in user_data:
-#                 user_data["training_attendance"] = {
-#                     "attended": 0,
-#                     "total": 0
-#                 }
-#                 updated_count += 1
-#
-#             if "game_attendance" not in user_data:
-#                 user_data["game_attendance"] = {
-#                     "attended": 0,
-#                     "total": 0
-#                 }
-#                 updated_count += 1
-#
-#         save_data(users, "users")
-#
-#         print(f"✅ Міграція завершена! Оновлено {updated_count} записів у {len(users)} користувачів.")
-#         return True
-#
-#     except Exception as e:
-#         print(f"❌ Помилка міграції: {e}")
-#         return False
-#
-#
-# migrate_users_add_new_fields()
