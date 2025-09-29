@@ -19,7 +19,7 @@ from telegram.ext import Application, MessageHandler, filters
 
 
 
-BOT_TOKEN = os.getenv("IDONTKNOWNAMES_TOKEN")
+BOT_TOKEN = os.getenv("NEW_TOKEN")
 
 
 async def error(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

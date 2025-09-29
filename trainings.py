@@ -5,7 +5,7 @@ from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, Call
     filters
 from training_archive import enhanced_reset_today_constant_trainings_status
 
-from data import load_data, save_data
+from data import load_data, save_data,log_command_usage
 from validation import is_authorized
 
 DATA_FILE = "users"
@@ -93,6 +93,8 @@ def create_voting_day_keyboard(prefix: str) -> InlineKeyboardMarkup:
 
 
 async def add_training(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/add_training")
     if not is_authorized(update.message.from_user.id):
         await update.message.reply_text(MESSAGES["unauthorized"])
         return ConversationHandler.END
@@ -558,6 +560,7 @@ def get_next_week_trainings(team=None):
 
 async def week_trainings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/week_trainings")
     user_data = load_data(DATA_FILE)
 
     if user_id not in user_data or "team" not in user_data[user_id]:
@@ -652,6 +655,8 @@ async def delete_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update.message.from_user.id):
         await update.message.reply_text("⛔ У вас немає прав для цієї команди.")
         return
+    user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/delete_training")
 
     one_time = load_data("one_time_trainings", {})
     constant = load_data("constant_trainings", {})
@@ -728,40 +733,53 @@ async def handle_delete_training_confirm(update: Update, context: ContextTypes.D
     query = update.callback_query
     await query.answer()
 
-    if query.data == "delete_training_cancel":
-        await query.edit_message_text("❌ Видалення тренування скасовано.")
+    # deltr_confirm_(yes|no)_(one|const)_<tid>
+    parts = query.data.split("_", 4)
+    if len(parts) != 5:
+        await query.edit_message_text("⚠️ Помилка підтвердження.")
         return
 
-    idx = int(query.data.replace("delete_training_confirm_", ""))
-    options = context.user_data.get("delete_training_options", [])
-
-    if idx >= len(options):
-        await query.edit_message_text("⚠️ Помилка: тренування не знайдено.")
+    _, _, decision, col_tag, tid = parts
+    if decision == "no":
+        await query.edit_message_text("Скасовано.")
         return
 
-    training_id, training = options[idx]
+    collection = "one_time_trainings" if col_tag == "one" else "constant_trainings"
+    trainings = load_data(collection, {})
+    t = trainings.get(tid)
+    if not t:
+        await query.edit_message_text("⚠️ Тренування не знайдено.")
+        return
 
-    # Load trainings
-    one_time_trainings = load_data("one_time_trainings", {})
-    constant_trainings = load_data("constant_trainings", {})
+    # Build label before deletion (only from existing fields)
+    if col_tag == "one":
+        label = f"{t['date']} {t['start_hour']:02d}:{t['start_min']:02d}"
+    else:
+        weekdays = ["Понеділок","Вівторок","Середа","Четвер","П'ятниця","Субота","Неділя"]
+        label = f"{weekdays[t['weekday']]} {t['start_hour']:02d}:{t['start_min']:02d}"
 
-    # Delete from the right collection
-    if training_id in one_time_trainings:
-        del one_time_trainings[training_id]
-        save_data(one_time_trainings, "one_time_trainings")
-    elif training_id in constant_trainings:
-        del constant_trainings[training_id]
-        save_data(constant_trainings, "constant_trainings")
+    trainings.pop(tid, None)
+    save_data(trainings, collection)
 
-    # ✅ Delete votes as well
+    # Визначаємо ключ голосів для цього тренування
+    if col_tag == "one":
+        vote_key = f"{t['date']}_{t['start_hour']:02d}:{t['start_min']:02d}"
+    else:
+        vote_key = f"const_{t['weekday']}_{t['start_hour']:02d}:{t['start_min']:02d}"
+
+    # Видаляємо голоси
     votes = load_data("votes", {"votes": {}})
-    if training_id in votes.get("votes", {}):
-        del votes["votes"][training_id]
+    if vote_key in votes["votes"]:
+        del votes["votes"][vote_key]
         save_data(votes, "votes")
-        print(f"✅ Видалено голосування для тренування {training_id}")
+        print(f"✅ Видалено голосування за тренування {vote_key}")
+
+
+    await query.edit_message_text(f"✅ Видалено: {label}")
 
 async def next_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/next_training")
     await update.message.reply_text(format_next_training_message(user_id))
 
 

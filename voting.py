@@ -4,7 +4,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, MessageHandler, \
     filters, ConversationHandler
 
-from data import load_data, save_data
+from data import load_data, save_data,log_command_usage
 from validation import is_authorized
 
 VOTE_TYPE, VOTE_QUESTION, VOTE_OPTIONS, VOTE_TEAM = range(200, 204)
@@ -142,8 +142,13 @@ class UnifiedVoteManager:
         now = datetime.datetime.now()
         game_votes = []
 
+        users = load_data("users", {})
+        user_info = users.get(user_id, {})
+
         for game in games.values():
             if game.get("team") not in [user_team, "Both"]:
+                continue
+            if game.get("type") == "stolichka" and not user_info.get("stolichna", False):
                 continue
 
             try:
@@ -234,6 +239,7 @@ unified_vote_manager = UnifiedVoteManager()
 
 async def unified_vote_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/vote")
     user_data = load_data(REGISTRATION_FILE)
 
     if user_id not in user_data or "team" not in user_data[user_id]:
@@ -421,6 +427,8 @@ def format_training_id(tid: str) -> str:
 
 
 async def add_vote(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/add_vote")
     if not is_authorized(update.message.from_user.id):
         await update.message.reply_text("⛔ У вас немає прав для створення голосувань.")
         return ConversationHandler.END
@@ -726,6 +734,8 @@ async def handle_text_vote_input(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def close_vote(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/close_vote")
     if not is_authorized(update.message.from_user.id):
         await update.message.reply_text("⛔ У вас немає прав для закриття голосувань.")
         return
@@ -922,6 +932,8 @@ async def cancel_vote_creation(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def vote_for(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/vote_for")
     if not is_authorized(update.message.from_user.id):
         await update.message.reply_text("У вас немає прав для цієї команди.")
         return ConversationHandler.END
@@ -1285,6 +1297,8 @@ async def handle_view_votes_selection(update: Update, context: ContextTypes.DEFA
 
 
 async def unlock_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/unlock_training")
     if not is_authorized(update.message.from_user.id):
         await update.message.reply_text("У вас немає прав для цієї команди.")
         return
@@ -1646,6 +1660,7 @@ unified_view_manager = UnifiedViewManager()
 
 async def unified_view_votes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/view_votes")
     user_data = load_data("users")
 
     if user_id not in user_data or "team" not in user_data[user_id]:
@@ -1695,6 +1710,8 @@ async def handle_unified_view_selection(update: Update, context: ContextTypes.DE
 
 
 async def vote_notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/vote_notify")
     if not is_authorized(update.message.from_user.id):
         await update.message.reply_text("⛔ У вас немає прав для надсилання нагадувань.")
         return
@@ -1807,6 +1824,8 @@ async def handle_vote_notify_selection(update: Update, context: ContextTypes.DEF
 
 
 async def vote_times(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/vote_times")
     if not is_authorized(update.message.from_user.id):
         await update.message.reply_text("⛔ У вас немає прав для перегляду часу голосувань.")
         return
@@ -1913,7 +1932,7 @@ def create_vot_for_handler():
 def setup_voting_handlers(app):
     # /vote
     app.add_handler(CommandHandler("vote", unified_vote_command))
-    # /view_votesd
+    # /view_votes
     app.add_handler(CommandHandler("view_votes", unified_view_votes))
     # Admin: /vote_times
     app.add_handler(CommandHandler("vote_times", vote_times))
@@ -1925,7 +1944,7 @@ def setup_voting_handlers(app):
     app.add_handler(create_vot_for_handler())
     # Admin: /add_vote
     app.add_handler(create_general_vote_handler())
-    # Admin: vote_notify
+    # Admin: /vote_notify
     app.add_handler(CommandHandler("vote_notify", vote_notify))
 
     # Other

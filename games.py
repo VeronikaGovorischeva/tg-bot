@@ -4,7 +4,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, CallbackQueryHandler, MessageHandler, \
     filters
 
-from data import load_data, save_data
+from data import load_data, save_data,log_command_usage
 from validation import is_authorized
 
 GAME_TYPE, GAME_TEAM, GAME_DATE, GAME_TIME, GAME_OPPONENT, GAME_LOCATION, GAME_ARRIVAL = range(300, 307)
@@ -89,6 +89,8 @@ game_manager = GameManager()
 
 
 async def add_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/add_game")
     if not is_authorized(update.message.from_user.id):
         await update.message.reply_text(GAME_MESSAGES["unauthorized"])
         return ConversationHandler.END
@@ -261,8 +263,6 @@ async def send_game_voting_to_team(context: ContextTypes.DEFAULT_TYPE, game_data
     users = load_data("users", {})
     type_name = game_manager.game_types[GameType(game_data['type'])]
 
-
-
     message = f"Нова гра!\n\n"
     message += f"{type_name}\n"
     message += f"Дата: {game_data['date']} о {game_data['time']}\n"
@@ -299,6 +299,7 @@ async def send_game_voting_to_team(context: ContextTypes.DEFAULT_TYPE, game_data
 
 async def next_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/next_game")
     users = load_data("users", {})
 
     if user_id not in users or "team" not in users[user_id]:
@@ -360,6 +361,8 @@ async def next_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def list_games(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/list_games")
     keyboard = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("Чоловіча команда", callback_data="list_games_Male"),
@@ -427,6 +430,8 @@ async def handle_list_games(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def delete_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/delete_game")
     if not is_authorized(update.message.from_user.id):
         await update.message.reply_text("⛔ У вас немає прав для видалення ігор.")
         return
@@ -585,9 +590,9 @@ async def handle_game_vote(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(f"✅ Ваш голос '{vote_text}' збережено!")
 
 
-
 async def week_games(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/week_games")
     users = load_data("users", {})
 
     if user_id not in users or "team" not in users[user_id]:
@@ -642,6 +647,8 @@ async def cancel_game_creation(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def close_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/close_game")
     if not is_authorized(update.message.from_user.id):
         await update.message.reply_text("⛔ У вас немає прав для закриття ігор.")
         return ConversationHandler.END
@@ -696,7 +703,7 @@ async def handle_close_game_selection(update: Update, context: ContextTypes.DEFA
     context.user_data["selected_game_id"] = game_id
     context.user_data["selected_game"] = game
     context.user_data[("selected_game_id"
-                    )] = game_id  # ✅ store it here
+                       )] = game_id  # ✅ store it here
     context.user_data["closing_game"] = game
 
     type_names = {
@@ -873,15 +880,19 @@ async def handle_close_game_mvp(update: Update, context: ContextTypes.DEFAULT_TY
 
     return CLOSE_GAME_AMOUNT
 
+
 async def handle_game_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         cost = int(update.message.text.strip())  # ✅ cast to int
-        if cost <= 0:
+        if cost < 0:
             await update.message.reply_text("⚠️ Сума має бути більше 0. Спробуйте ще раз:")
-            return GAME_COST
+            return CLOSE_GAME_AMOUNT
     except ValueError:
         await update.message.reply_text("⚠️ Введіть число. Спробуйте ще раз:")
-        return GAME_COST
+        return CLOSE_GAME_AMOUNT
+
+    if cost == 0:
+        return await finalize_game_closure(update, context, None)
 
     context.user_data["game_cost"] = int(cost)
     game_id = context.user_data["selected_game_id"]
@@ -909,6 +920,7 @@ async def handle_game_amount(update: Update, context: ContextTypes.DEFAULT_TYPE)
     )
     return GAME_SELECT_PLAYERS
 
+
 async def handle_toggle_player(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()  # ✅ must be here
@@ -931,12 +943,12 @@ async def handle_toggle_player(update: Update, context: ContextTypes.DEFAULT_TYP
     keyboard.append([InlineKeyboardButton("✅ Готово", callback_data="players_done")])
 
     await query.edit_message_reply_markup(InlineKeyboardMarkup(keyboard))
-    return GAME_SELECT_PLAYERS   # ✅ stay in same state
+    return GAME_SELECT_PLAYERS  # ✅ stay in same state
 
 
 async def handle_players_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()   # ✅ important
+    await query.answer()  # ✅ important
 
     selected = context.user_data["selected_players"]
     if not selected:
@@ -948,7 +960,7 @@ async def handle_players_done(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.edit_message_text(
         f"✅ Обрано {len(selected)} гравців. Тепер введіть номер карти для оплати:"
     )
-    return GAME_ENTER_CARD   # ✅ go forward
+    return GAME_ENTER_CARD  # ✅ go forward
 
 
 async def handle_game_card_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -974,7 +986,7 @@ async def handle_game_card_input(update: Update, context: ContextTypes.DEFAULT_T
     # 5) Save payments like trainings
     payments = load_data("payments", {})
     success_count = 0
-    training_id = f"game_{game_id}"   # unified id
+    training_id = f"game_{game_id}"  # unified id
 
     for uid in players:
         payment_key = f"{training_id}_{uid}"  # EXACTLY like trainings
@@ -1016,10 +1028,6 @@ async def handle_game_card_input(update: Update, context: ContextTypes.DEFAULT_T
     # 6) Finish the same way; do NOT re-create payments here
     await finalize_game_closure(update, context, None)
     return ConversationHandler.END
-
-
-
-
 
 
 async def finalize_game_closure(update, context, amount):
@@ -1184,6 +1192,8 @@ async def handle_game_payment_confirmation(update: Update, context: ContextTypes
 
 
 async def edit_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/edit_game")
     if not is_authorized(update.message.from_user.id):
         await update.message.reply_text("⛔ У вас немає прав для редагування ігор.")
         return ConversationHandler.END
@@ -1463,6 +1473,10 @@ async def send_game_update_notification(context: ContextTypes.DEFAULT_TYPE, old_
 
     count = 0
     for uid, user_info in users.items():
+        # 🔹 Stolichna filter
+        if new_game.get("type") == "stolichka" and not user_info.get("stolichna", False):
+            continue
+
         if new_game.get("team") in [user_info.get("team"), "Both"]:
             try:
                 await context.bot.send_message(chat_id=int(uid), text=message)

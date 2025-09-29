@@ -2,7 +2,7 @@ import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CallbackQueryHandler, CommandHandler, MessageHandler, filters, \
     ConversationHandler
-from data import load_data
+from data import load_data, log_command_usage, save_data
 from validation import ADMIN_IDS
 import asyncio
 
@@ -19,6 +19,8 @@ CLOWN_VOICE_PATH = os.path.join(os.path.dirname(__file__), "clown.ogg")
 
 
 async def send_message_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/send_message")
     keyboard = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("Чоловіча команда", callback_data="send_team_Male"),
@@ -94,6 +96,7 @@ async def handle_send_message_input(update: Update, context: ContextTypes.DEFAUL
 
 async def notify_debtors(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/notify_debtors")
     if user_id not in ADMIN_IDS:
         await update.message.reply_text("⛔ У вас немає прав для надсилання повідомлень боржникам.")
         return
@@ -129,6 +132,8 @@ async def notify_debtors(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def mvp_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/mvp_stats")
     keyboard = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("Чоловіча команда", callback_data="mvp_stats_Male"),
@@ -257,6 +262,8 @@ async def handle_attendance_stats_selection(update: Update, context: ContextType
 
 
 async def training_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/training_stats")
     keyboard = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("Чоловіча команда", callback_data="training_stats_Male"),
@@ -323,6 +330,8 @@ async def handle_training_stats_selection(update: Update, context: ContextTypes.
 
 
 async def game_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/game_stats")
     keyboard = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("Чоловіча команда", callback_data="game_stats_Male"),
@@ -389,6 +398,7 @@ async def handle_game_stats_selection(update: Update, context: ContextTypes.DEFA
 
 async def my_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/my_stats")
     users = load_data("users", {})
 
     if user_id not in users:
@@ -515,6 +525,8 @@ def filter_games_by_season_id(games, season_filter):
 
 
 async def game_results(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/game_results")
     keyboard = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("Чоловіча команда", callback_data="game_results_team_Male"),
