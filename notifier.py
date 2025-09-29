@@ -233,6 +233,10 @@ async def send_game_reminder(app, game, game_id, users, game_votes):
     ])
 
     for uid, user_info in users.items():
+        # 🔹 Stolichna filter
+        if game.get("type") == "stolichka" and not user_info.get("stolichna", False):
+            continue
+
         if game.get("team") not in [user_info.get("team"), "Both"]:
             continue
 
@@ -243,7 +247,7 @@ async def send_game_reminder(app, game, game_id, users, game_votes):
             reply_markup = keyboard
 
         elif user_vote.get("vote") == "yes":
-            message = base_message + "✅ Ти записаний на гру. Удачі завтра!"
+            message = base_message + "✅ Удачі завтра!"
             reply_markup = None
 
         else:

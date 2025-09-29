@@ -1473,6 +1473,10 @@ async def send_game_update_notification(context: ContextTypes.DEFAULT_TYPE, old_
 
     count = 0
     for uid, user_info in users.items():
+        # 🔹 Stolichna filter
+        if new_game.get("type") == "stolichka" and not user_info.get("stolichna", False):
+            continue
+
         if new_game.get("team") in [user_info.get("team"), "Both"]:
             try:
                 await context.bot.send_message(chat_id=int(uid), text=message)
