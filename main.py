@@ -1,8 +1,10 @@
 import asyncio
 import os
+from asyncore import dispatcher
+
 from apscheduler.schedulers.background import BackgroundScheduler
 from telegram import Update
-from telegram.ext import Application, ContextTypes
+from telegram.ext import Application, ContextTypes, MessageHandler, filters
 
 from trainings import setup_training_handlers, reset_today_constant_trainings_status, delete_training
 from registration import setup_registration_handlers
@@ -11,6 +13,11 @@ from voting import setup_voting_handlers
 from payments import setup_payment_handlers
 from commands import setup_admin_handlers
 from notifier import check_voting_and_notify, start_voting, check_game_reminders
+from telegram.ext import Application, MessageHandler, filters
+
+
+
+
 
 BOT_TOKEN = os.getenv("IDONTKNOWNAMES_TOKEN")
 
@@ -73,4 +80,7 @@ if __name__ == "__main__":
 
     app.add_error_handler(error)
 
+
     app.run_polling(poll_interval=0.1)
+
+

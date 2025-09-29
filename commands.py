@@ -9,6 +9,13 @@ import asyncio
 SEND_MESSAGE_STATE = {}
 
 GAME_RESULTS_TEAM, GAME_RESULTS_SEASON, GAME_RESULTS_TYPE = range(500, 503)
+import os
+from telegram import Update
+from telegram.ext import ContextTypes
+
+CLOWN_VOICE_PATH = os.path.join(os.path.dirname(__file__), "clown.ogg")
+
+
 
 
 async def send_message_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -45,6 +52,13 @@ async def handle_send_message_input(update: Update, context: ContextTypes.DEFAUL
         await context.bot.send_chat_action(user_id, action='choose_sticker')
         await asyncio.sleep(1)
         await update.message.reply_text("🤡")
+        try:
+            with open(CLOWN_VOICE_PATH, "rb") as vf:
+                await context.bot.send_voice(chat_id=update.effective_chat.id, voice=vf)
+        except FileNotFoundError:
+            await update.message.reply_text("⚠️ clown.ogg file not found.")
+        except Exception as e:
+            print(f"❌ Error sending clown voice: {e}")
 
     if "🖕" in message_text:
         await context.bot.send_chat_action(user_id, action='typing')
