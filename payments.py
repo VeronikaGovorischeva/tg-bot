@@ -2,7 +2,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler, MessageHandler, filters, CallbackQueryHandler, \
     CommandHandler
 from training_archive import archive_training_after_charge
-from data import load_data, save_data
+from data import load_data, save_data,log_command_usage
 from validation import ADMIN_IDS, is_authorized
 
 CHARGE_SELECT_TRAINING, CHARGE_ENTER_AMOUNT, CHARGE_ENTER_CARD = range(100, 103)
@@ -10,6 +10,8 @@ CARD_NUMBER = "5457 0825 2151 6794"
 
 
 async def charge_all(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/charge_all")
     if not is_authorized(update.message.from_user.id):
         await update.message.reply_text("⛔ У вас немає прав для цієї команди.")
         return ConversationHandler.END
@@ -304,6 +306,7 @@ async def cancel_charge(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
 async def pay_debt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/pay_debt")
     payments = load_data("payments", {})
 
     # both trainings and games
@@ -410,6 +413,8 @@ async def handle_pay_debt_confirmation(update: Update, context: ContextTypes.DEF
 
 
 async def view_payments(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/view_payments")
     if not is_authorized(update.message.from_user.id):
         await update.message.reply_text("⛔ У вас немає доступу до перегляду платежів.")
         return

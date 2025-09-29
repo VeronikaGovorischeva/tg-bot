@@ -4,7 +4,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, CallbackQueryHandler, MessageHandler, \
     filters
 
-from data import load_data, save_data
+from data import load_data, save_data,log_command_usage
 from validation import is_authorized
 
 GAME_TYPE, GAME_TEAM, GAME_DATE, GAME_TIME, GAME_OPPONENT, GAME_LOCATION, GAME_ARRIVAL = range(300, 307)
@@ -89,6 +89,8 @@ game_manager = GameManager()
 
 
 async def add_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/add_game")
     if not is_authorized(update.message.from_user.id):
         await update.message.reply_text(GAME_MESSAGES["unauthorized"])
         return ConversationHandler.END
@@ -297,6 +299,7 @@ async def send_game_voting_to_team(context: ContextTypes.DEFAULT_TYPE, game_data
 
 async def next_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/next_game")
     users = load_data("users", {})
 
     if user_id not in users or "team" not in users[user_id]:
@@ -358,6 +361,8 @@ async def next_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def list_games(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/list_games")
     keyboard = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("Чоловіча команда", callback_data="list_games_Male"),
@@ -425,6 +430,8 @@ async def handle_list_games(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def delete_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/delete_game")
     if not is_authorized(update.message.from_user.id):
         await update.message.reply_text("⛔ У вас немає прав для видалення ігор.")
         return
@@ -585,6 +592,7 @@ async def handle_game_vote(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def week_games(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/week_games")
     users = load_data("users", {})
 
     if user_id not in users or "team" not in users[user_id]:
@@ -639,6 +647,8 @@ async def cancel_game_creation(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def close_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/close_game")
     if not is_authorized(update.message.from_user.id):
         await update.message.reply_text("⛔ У вас немає прав для закриття ігор.")
         return ConversationHandler.END
@@ -1182,6 +1192,8 @@ async def handle_game_payment_confirmation(update: Update, context: ContextTypes
 
 
 async def edit_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/edit_game")
     if not is_authorized(update.message.from_user.id):
         await update.message.reply_text("⛔ У вас немає прав для редагування ігор.")
         return ConversationHandler.END

@@ -5,7 +5,7 @@ from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, Call
     filters
 from training_archive import enhanced_reset_today_constant_trainings_status
 
-from data import load_data, save_data
+from data import load_data, save_data,log_command_usage
 from validation import is_authorized
 
 DATA_FILE = "users"
@@ -93,6 +93,8 @@ def create_voting_day_keyboard(prefix: str) -> InlineKeyboardMarkup:
 
 
 async def add_training(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/add_training")
     if not is_authorized(update.message.from_user.id):
         await update.message.reply_text(MESSAGES["unauthorized"])
         return ConversationHandler.END
@@ -558,6 +560,7 @@ def get_next_week_trainings(team=None):
 
 async def week_trainings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/week_trainings")
     user_data = load_data(DATA_FILE)
 
     if user_id not in user_data or "team" not in user_data[user_id]:
@@ -652,6 +655,8 @@ async def delete_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update.message.from_user.id):
         await update.message.reply_text("⛔ У вас немає прав для цієї команди.")
         return
+    user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/delete_training")
 
     one_time = load_data("one_time_trainings", {})
     constant = load_data("constant_trainings", {})
@@ -774,6 +779,7 @@ async def handle_delete_training_confirm(update: Update, context: ContextTypes.D
 
 async def next_training(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
+    log_command_usage(user_id, "/next_training")
     await update.message.reply_text(format_next_training_message(user_id))
 
 

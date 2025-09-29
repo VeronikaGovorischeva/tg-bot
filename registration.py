@@ -5,7 +5,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, CallbackQueryHandler, \
     filters
 from dataclasses import dataclass
-from data import load_data, save_data
+from data import load_data, save_data, log_command_usage
 
 
 class RegistrationState(Enum):
@@ -102,6 +102,7 @@ class RegistrationManager:
 
     async def handle_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         user = update.message.from_user
+        log_command_usage(str(user.id), "/start")
         profile = self.load_user_profile(str(user.id))
 
         if profile and profile.is_registered():
