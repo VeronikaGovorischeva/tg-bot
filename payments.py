@@ -324,7 +324,7 @@ async def pay_debt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     ]
 
     await update.message.reply_text(
-        f"Карта: `{user_debts[0]['card']}`\nОберіть оплату для підтвердження:",
+        f"Оберіть для перегляду карти та підтвердження оплати:",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='Markdown'
     )
@@ -348,12 +348,14 @@ async def handle_pay_debt_selection(update: Update, context: ContextTypes.DEFAUL
     debt_type = "гру" if selected["training_id"].startswith("game_") else "тренування"
 
     keyboard = [
-        [InlineKeyboardButton("✅ Так, оплатив(ла)", callback_data="paydebt_confirm_yes")]
+        [InlineKeyboardButton("✅ Оплатив(ла)", callback_data="paydebt_confirm_yes")]
     ]
 
     await query.edit_message_text(
+        f"Карта: `{selected['card']}`\n\n"
         f"Ти точно оплатив(-ла) {selected['amount']} грн за {debt_type} {selected['training_datetime']}?",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode='Markdown'
     )
 
 
