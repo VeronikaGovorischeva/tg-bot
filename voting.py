@@ -142,8 +142,13 @@ class UnifiedVoteManager:
         now = datetime.datetime.now()
         game_votes = []
 
+        users = load_data("users", {})
+        user_info = users.get(user_id, {})
+
         for game in games.values():
             if game.get("team") not in [user_team, "Both"]:
+                continue
+            if game.get("type") == "stolichka" and not user_info.get("stolichna", False):
                 continue
 
             try:
