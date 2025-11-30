@@ -19,79 +19,123 @@ CLOWN_VOICE_PATH = os.path.join(os.path.dirname(__file__), "clown.ogg")
 
 
 async def send_message_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.message.from_user.id)
-    log_command_usage(user_id, "/send_message")
+
     keyboard = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("Чоловіча команда", callback_data="send_team_Male"),
-            InlineKeyboardButton("Жіноча команда", callback_data="send_team_Female"),
+            InlineKeyboardButton("Чоловіча", callback_data="send_team_Male"),
+            InlineKeyboardButton("Жіноча", callback_data="send_team_Female"),
         ],
-        [InlineKeyboardButton("Обидві команди", callback_data="send_team_Both")]
+        [InlineKeyboardButton("Обидві", callback_data="send_team_Both")]
     ])
-    await update.message.reply_text("Оберіть команду, якій хочете надіслати повідомлення:", reply_markup=keyboard)
 
+    await update.message.reply_text(
+        "Оберіть команду, якій хочете надіслати повідомлення:",
+        reply_markup=keyboard
+    )
 
 async def handle_send_message_team_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+
+        team = query.data.replace("send_team_", "")
+
+        # Save chosen team
+        SEND_MESSAGE_STATE[query.from_user.id] = {"team": team}
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Столичка", callback_data="send_league_stolichka")],
+            [InlineKeyboardButton("Універсіада", callback_data="send_league_universiada")],
+            [InlineKeyboardButton("Без фільтру", callback_data="send_league_none")]
+        ])
+
+        await query.edit_message_text(
+            f"Обрана команда: {team}.\n\n"
+            f"Тепер оберіть фільтр по лізі:",
+            reply_markup=keyboard
+        )
+
+
+async def handle_send_message_league_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    team = query.data.replace("send_team_", "")
-    SEND_MESSAGE_STATE[query.from_user.id] = team
+    league = query.data.replace("send_league_", "")
+
+    if query.from_user.id not in SEND_MESSAGE_STATE:
+        SEND_MESSAGE_STATE[query.from_user.id] = {}
+
+    SEND_MESSAGE_STATE[query.from_user.id]["league"] = league
 
     await query.edit_message_text(
-        f"Ви обрали: {team} команда.\n\nТепер надішліть текст повідомлення у наступному повідомленні.")
-
+        f"Обрана ліга: {league}.\n\n"
+        f"Тепер введіть текст повідомлення у наступному повідомленні."
+    )
 
 async def handle_send_message_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    message_text = update.message.text
-    if "🤡" in message_text:
-        await context.bot.send_chat_action(user_id, action='record_voice')
-        await asyncio.sleep(3)
-        await context.bot.send_chat_action(user_id, action='typing')
-        await asyncio.sleep(2)
-        await update.message.reply_text("Ти Клоун")
-        await context.bot.send_chat_action(user_id, action='choose_sticker')
-        await asyncio.sleep(1)
-        await update.message.reply_text("🤡")
-        try:
-            with open(CLOWN_VOICE_PATH, "rb") as vf:
-                await context.bot.send_voice(chat_id=update.effective_chat.id, voice=vf)
-        except FileNotFoundError:
-            await update.message.reply_text("⚠️ clown.ogg file not found.")
-        except Exception as e:
-            print(f"❌ Error sending clown voice: {e}")
 
-    if "🖕" in message_text:
-        await context.bot.send_chat_action(user_id, action='typing')
-        await asyncio.sleep(3)
-        await context.bot.send_dice(user_id, emoji='🎲')
+        user_id = update.message.from_user.id
 
-    if user_id not in SEND_MESSAGE_STATE:
-        return
 
-    team = SEND_MESSAGE_STATE.pop(user_id)
-    message_text = update.message.text
-    users = load_data("users")
 
-    sender_username = update.message.from_user.username
-    if sender_username:
-        footer = f"\n\n👤 Повідомлення надіслав(ла): @{sender_username}"
-    else:
-        footer = f"\n\n👤 Повідомлення надіслав(ла): {update.message.from_user.first_name}"
+        if user_id not in SEND_MESSAGE_STATE:
+            return  # not in flow
 
-    full_message = f"{message_text}{footer}"
+        # Extract filters
+        state = SEND_MESSAGE_STATE.pop(user_id)
+        team_filter = state["team"]
+        league_filter = state["league"]
 
-    count = 0
-    for uid, info in users.items():
-        if team in [info.get("team"), "Both"]:
+        message_text = update.message.text
+        users = load_data("users")
+
+        if "🤡" in message_text:
+            await context.bot.send_chat_action(user_id, action='record_voice')
+            await asyncio.sleep(3)
+            await context.bot.send_chat_action(user_id, action='typing')
+            await asyncio.sleep(2)
+            await update.message.reply_text("Ти Клоун")
+            await context.bot.send_chat_action(user_id, action='choose_sticker')
+            await asyncio.sleep(1)
+            await update.message.reply_text("🤡")
+            try:
+                with open(CLOWN_VOICE_PATH, "rb") as vf:
+                    await context.bot.send_voice(chat_id=update.effective_chat.id, voice=vf)
+            except FileNotFoundError:
+                await update.message.reply_text("⚠️ clown.ogg file not found.")
+            except Exception as e:
+                print(f"❌ Error sending clown voice: {e}")
+
+        # Footer
+        sender_username = update.message.from_user.username
+        if sender_username:
+            footer = f"\n\n👤 Повідомлення надіслав(ла): @{sender_username}"
+        else:
+            footer = f"\n\n👤 Повідомлення надіслав(ла): {update.message.from_user.first_name}"
+
+        full_message = f"{message_text}{footer}"
+
+        count = 0
+
+        for uid, info in users.items():
+
+            # TEAM filter
+            if team_filter != "Both" and info.get("team") != team_filter:
+                continue
+
+            # LEAGUE filter
+            if league_filter == "stolichka" and not info.get("stolichna", False):
+                continue
+            if league_filter == "universiada" and not info.get("universiada", False):
+                continue
+            # "none" → no league restriction
+
             try:
                 await context.bot.send_message(chat_id=int(uid), text=full_message)
                 count += 1
             except Exception as e:
                 print(f"❌ Не вдалося надіслати повідомлення {uid}: {e}")
 
-    await update.message.reply_text(f"✅ Повідомлення надіслано {count} користувачам.")
+        await update.message.reply_text(f"✅ Повідомлення надіслано {count} користувачам.")
 
 
 async def notify_debtors(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -726,10 +770,27 @@ def setup_admin_handlers(app):
     app.add_handler(CallbackQueryHandler(handle_training_stats_selection, pattern=r"^training_stats_"))
     app.add_handler(CallbackQueryHandler(handle_game_stats_selection, pattern=r"^game_stats_"))
     app.add_handler(CallbackQueryHandler(handle_mvp_stats_selection, pattern=r"^mvp_stats_"))
-    # Admin: /send_message
-    app.add_handler(CallbackQueryHandler(handle_send_message_team_selection, pattern=r"^send_team_"))
     # Admin: /notify_debtors
     app.add_handler(CommandHandler("notify_debtors", notify_debtors))
-    # Handle message input (must be last text handler)
+    # Handle message input (must be last text handler
+
     app.add_handler(CommandHandler("send_message", send_message_command))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_send_message_input))
+
+    # Step 1 — Team selection
+    app.add_handler(CallbackQueryHandler(
+        handle_send_message_team_selection,
+        pattern="^send_team_"
+    ))
+
+    # Step 2 — League selection
+    app.add_handler(CallbackQueryHandler(
+        handle_send_message_league_selection,
+        pattern="^send_league_"
+    ))
+
+    # Step 3 — Message text input
+    app.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        handle_send_message_input
+    ))
+

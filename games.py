@@ -43,7 +43,8 @@ GAME_MESSAGES = {
     "game_saved": "Інформацію про гру успішно збережено!",
     "invalid_date": "Неправильний формат дати. Будь ласка, використовуйте формат ДД.ММ.РРРР",
     "invalid_time": "Неправильний формат часу. Будь ласка, використовуйте формат ГГ:ХХ",
-    "not_stolichna": "Ви не приймаєте участь в Столичній лізі"
+    "not_stolichna": "Ви не приймаєте участь в Столичній лізі",
+    "not_universiad":"Ви не приймаєте участь в універсіаді"
 }
 
 
@@ -286,6 +287,8 @@ async def send_game_voting_to_team(context: ContextTypes.DEFAULT_TYPE, game_data
         # new Stolichna filter
         if game_data.get("type") == "stolichka" and not user_info.get("stolichna", False):
             continue
+        if game_data.get("type") == "universiad" and not user_info.get("universiada", False):
+            continue
 
         try:
             await context.bot.send_message(
@@ -317,6 +320,8 @@ async def next_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
             continue
 
         if game.get("type") == "stolichka" and not users[user_id].get("stolichna", False):
+            continue
+        if game.get("type") == "universiad" and not users[user_id].get("universiada", False):
             continue
 
         try:
@@ -572,6 +577,9 @@ async def handle_game_vote(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ✅ Stolichna filter
     if game and game.get("type") == "stolichka" and not user_info.get("stolichna", False):
         await query.edit_message_text("⚠️ Це голосування доступне тільки для учасників Столичної ліги.")
+        return
+    if game and game.get("type") == "universiad" and not user_info.get("universiada", False):
+        await query.edit_message_text("⚠️ Це голосування доступне тільки для учасників")
         return
 
     user_name = user_info.get("name", "Невідомий") if user_info else "Невідомий"
@@ -1473,8 +1481,12 @@ async def send_game_update_notification(context: ContextTypes.DEFAULT_TYPE, old_
 
     count = 0
     for uid, user_info in users.items():
-        # 🔹 Stolichna filter
+        # Stolichka filter
         if new_game.get("type") == "stolichka" and not user_info.get("stolichna", False):
+            continue
+
+        # Universiada filter
+        if new_game.get("type") == "universiad" and not user_info.get("universiada", False):
             continue
 
         if new_game.get("team") in [user_info.get("team"), "Both"]:
