@@ -530,29 +530,144 @@ def get_available_seasons_from_ids(games_data, team_filter):
 
 
 async def show_tournament_selection(query, context, team_name):
-    keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("Товариські матчі", callback_data="game_results_type_friendly"),
-            InlineKeyboardButton("Столична ліга", callback_data="game_results_type_stolichka")
-        ],
-        [
-            InlineKeyboardButton("Універсіада", callback_data="game_results_type_universiad"),
-            InlineKeyboardButton("Всі матчі", callback_data="game_results_type_all")
-        ]
-    ])
+    games = load_data("games", {})
+    selected_team = context.user_data.get("selected_team")
+    selected_season = context.user_data.get("selected_season")
+
+    # 🔹 1. Відфільтровуємо ігри для обраної команди та сезону
+    filtered_games = {}
+    for game_id, game in games.items():
+        if game.get("team") not in [selected_team, "Both"]:
+            continue
+        if selected_season and selected_season not in game_id:
+            continue
+        filtered_games[game_id] = game
+
+    # 🔸 Якщо немає жодної гри для команди → одразу повідомлення
+    if not filtered_games:
+        if selected_season:
+            season_start, season_end = selected_season.split("_")
+
+        await query.edit_message_text(
+            f"❌ Немає результатів ігор для цієї команди."
+        )
+        return ConversationHandler.END
+
+    # 🔹 2. Визначаємо доступні типи турнірів
+    available_types = set(game.get("type") for game in filtered_games.values())
+
+    type_labels = {
+        "friendly": "Товариські матчі",
+        "stolichka": "Столична ліга",
+        "universiad": "Універсіада"
+    }
 
     season_text = ""
-    selected_season = context.user_data.get("selected_season")
     if selected_season:
         season_start, season_end = selected_season.split("_")
         season_text = f" сезону {season_start}/{season_end}"
 
+    # 🔸 Якщо є лише один тип турніру — одразу показуємо результати
+    if len(available_types) == 1:
+        only_type = next(iter(available_types))
+        type_filter = only_type
+
+        now = datetime.datetime.now()
+        completed_games = []
+        for game_id, game in filtered_games.items():
+            if game.get("type") != type_filter:
+                continue
+            try:
+                game_datetime = datetime.datetime.strptime(f"{game['date']} {game['time']}", "%d.%m.%Y %H:%M")
+                result = game.get("result", {})
+                if game_datetime < now and result.get("status") is not None:
+                    completed_games.append((game_id, game, game_datetime))
+            except ValueError:
+                continue
+
+        completed_games.sort(key=lambda x: x[2], reverse=True)
+
+        type_names = {
+            "friendly": "товариських матчів",
+            "stolichka": "Столичної ліги",
+            "universiad": "Універсіади"
+        }
+        readable_type = type_names.get(type_filter, "матчів")
+
+        if not completed_games:
+            await query.edit_message_text(
+                f"🏆 Результати {readable_type} {team_name} команди{season_text}:\n\n"
+                f"❌ Поки що немає завершених ігор з результатами."
+            )
+            return ConversationHandler.END
+
+        # Формуємо текст з результатами
+        message = f"🏆 Результати {readable_type} {team_name} команди{season_text}:\n\n"
+        game_type_names = {
+            "friendly": "Товариська",
+            "stolichka": "Столичка",
+            "universiad": "Універсіада"
+        }
+
+        for game_id, game, game_datetime in completed_games:
+            result = game["result"]
+            type_name_short = game_type_names.get(game["type"], game["type"])
+
+            if result["status"] == "win":
+                emoji = "🟢"
+            elif result["status"] == "loss":
+                emoji = "🔴"
+            else:
+                emoji = "🟡"
+
+            message += f"{emoji} {type_name_short} - {game['date']}\n"
+            message += f"   Проти: **{game['opponent']}**\n"
+            message += f"   Рахунок: {result['our_score']}:{result['opponent_score']}\n"
+
+            if result.get("sets"):
+                sets_text = ", ".join([f"{s['our']}:{s['opponent']}" for s in result["sets"]])
+                message += f"   Сети: {sets_text}\n"
+
+            if game.get("mvp"):
+                message += f"   🏆 MVP: {game['mvp']}\n"
+
+            message += "\n"
+
+        wins = sum(1 for _, g, _ in completed_games if g["result"]["status"] == "win")
+        losses = sum(1 for _, g, _ in completed_games if g["result"]["status"] == "loss")
+        draws = sum(1 for _, g, _ in completed_games if g["result"]["status"] == "draw")
+
+        message += f"📊 Статистика: {wins} перемог, {losses} поразок"
+        if draws > 0:
+            message += f", {draws} нічиїх"
+
+        if len(message) > 4000:
+            for i in range(0, len(message), 4000):
+                await query.message.reply_text(message[i:i + 4000], parse_mode="Markdown")
+            await query.delete_message()
+        else:
+            await query.edit_message_text(message, parse_mode="Markdown")
+
+        return ConversationHandler.END
+
+    # 🔹 3. Якщо кілька типів — показуємо кнопки лише для доступних турнірів
+    keyboard = [
+        [InlineKeyboardButton(type_labels[t], callback_data=f"game_results_type_{t}")]
+        for t in type_labels if t in available_types
+    ]
+
+    if len(available_types) > 1:
+        keyboard.append([InlineKeyboardButton("Всі матчі", callback_data="game_results_type_all")])
+
     await query.edit_message_text(
         f"🏆 Результати ігор {team_name} команди{season_text}\n\nОберіть тип турніру:",
-        reply_markup=keyboard
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
     return GAME_RESULTS_TYPE
+
+
+
 
 
 def filter_games_by_season_id(games, season_filter):
@@ -656,7 +771,7 @@ async def handle_game_results_type_selection(update: Update, context: ContextTyp
         try:
             game_datetime = datetime.datetime.strptime(f"{game['date']} {game['time']}", "%d.%m.%Y %H:%M")
             result = game.get("result", {})
-            if game_datetime < now and result.get("status") is not None:
+            if game_datetime <= now and result.get("status") is not None:
                 completed_games.append((game_id, game, game_datetime))
         except ValueError:
             continue
